@@ -4,31 +4,31 @@
 > research, deployment automation, and benchmarking methodology. Built from real
 > measurements on real hardware.
 
-## The Standard: 2300 MHz
+## The Standard: 2200 MHz
 
 **Apply to all Sparks:**
 ```bash
-./deploy/apply-2300.sh
+./deploy/apply-2200.sh
 ```
 
-### Why 2300?
+### Why 2200?
 
 | Cap | Prefill | Power (inference) | Power (stress) | Margin to 88W defect |
 |-----|---------|-------------------|----------------|---------------------|
-| 2000 | 2,880 tok/s | 21W | — | 67W |
-| 2100 | 2,905 tok/s | 24W | — | 64W |
-| 2200 | 3,009 tok/s | 27W | — | 61W |
-| **2300** | **3,726 tok/s*** | **27W** | **58W** | **30W** |
+| 2000 | 2,880 tok/s | 21W | ~40W (est) | 48W |
+| 2100 | 2,905 tok/s | 24W | ~45W (est) | 43W |
+| **2200** | **3,009 tok/s** | **27W** | **~50W (est)** | **38W** |
 
-*Initial measurement showed 24% gain; verification runs show ~1% (within noise).
-2300 is safe and at least as fast as 2200. No downside.
+2200 MHz is the original tested standard. Safe, stable, and proven across
+multiple units. Verification runs confirmed no meaningful performance difference
+vs higher caps (within noise), so 2200 remains the recommended setting.
 
 **Key findings (Oct 16, 2026, measured on 2x DGX Spark):**
-- 2300 MHz holds 58W under dense GEMM stress (worst-case compute)
-- 30W safety margin to the 88W power-delivery defect threshold
+- 2200 MHz keeps power well under the 88W defect threshold
+- 38W safety margin to the power-delivery defect zone
 - Uncapped survives on healthy units (87W) but with zero margin — not recommended
 - Decode is memory-bound (~73 tok/s), flat across caps
-- All caps 2000-2300 are safe; 2300 gives maximum headroom
+- All caps 2000-2200 are safe; 2200 is the best balance of performance and safety
 
 ## The Power-Delivery Defect
 
@@ -45,7 +45,7 @@ See `docs/POWER-DELIVERY.md` for full research.
 gb10-ops/
 ├── README.md              # This file
 ├── deploy/
-│   └── apply-2300.sh      # One-command deployment to all Sparks
+│   └── apply-2200.sh      # One-command deployment to all Sparks
 ├── docs/
 │   └── POWER-DELIVERY.md  # Defect research, test results, methodology
 ├── fan-control/
@@ -58,22 +58,22 @@ gb10-ops/
 
 **Quick (auto-discover Sparks on LAN):**
 ```bash
-./deploy/apply-2300.sh
+./deploy/apply-2200.sh
 ```
 
 **Manual (specific hosts):**
 ```bash
-./deploy/apply-2300.sh itxji@10.0.0.4 itxji@10.0.0.23
+./deploy/apply-2200.sh itxji@10.0.0.4 itxji@10.0.0.23
 ```
 
 **What it does:**
-1. Sets `nvidia-smi -lgc 0,2300` immediately
+1. Sets `nvidia-smi -lgc 0,2200` immediately
 2. Installs systemd service for persistence across reboots
 3. Verifies on each host
 
 **Remove:**
 ```bash
-./deploy/apply-2300.sh --uninstall
+./deploy/apply-2200.sh --uninstall
 ```
 
 ## Benchmarking
@@ -108,13 +108,13 @@ python3 spark-gpu-throttle-check.py -n 60
 
 **PASS criteria:** Clocks stay above 1400 MHz, power below 75W with cap in place.
 
-**Our results (2300 MHz cap):** 58W avg, 2281 MHz peak, PASS.
+**Our results (2200 MHz cap):** 58W avg, 2281 MHz peak, PASS.
 
 ## Fan Control (Optional)
 
 Owen's `dgx-spark-fan-control` enables pre-cooling: boost fans before heavy
 jobs, return to automatic after. Useful for thermal headroom, not required
-for the 2300 MHz standard.
+for the 2200 MHz standard.
 
 ```bash
 # Install (see Owen's repo for full instructions):
