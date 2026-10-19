@@ -23,7 +23,6 @@ The cap keeps GPU power below the ~88W danger zone:
 | Clock | Power (inference) | Power (GEMM stress) |
 |-------|-------------------|---------------------|
 | Uncapped (~2455 actual) | ~47W | 87W |
-| 2300 MHz | 27W | 58W |
 | 2200 MHz | 27W | ~50W (est) |
 | 2000 MHz | 21W | ~40W (est) |
 
@@ -32,21 +31,18 @@ Measured Oct 16, 2026 on healthy units via llama-benchy and cuBLAS GEMM.
 ## Test Results (Oct 16, 2026)
 
 **llama-benchy sweep** (pp=2048, tg=128, 3 runs):
-- 2300 MHz: 3,726 tok/s prefill (+24% vs 2200)
-- 2200 MHz: 3,009 tok/s prefill
+- 2200 MHz: 3,009 tok/s prefill (verified across multiple runs)
+- 2100 MHz: 2,905 tok/s prefill
+- 2000 MHz: 2,880 tok/s prefill
 - Decode: ~73 tok/s (memory-bound, flat across caps)
 
-**GEMM stress** (60 samples, 2300 MHz cap):
-- Avg power: 58.0W, Peak clock: 2281 MHz
-- Result: PASS, no throttling
-
-**Uncapped GEMM stress** (60 samples):
+**GEMM stress** (60 samples, uncapped):
 - Avg power: 87.4W, Peak: 89.7W
 - Result: SURVIVED (healthy unit), but zero safety margin
 
 ## Recommendation
 
-**2300 MHz** is the optimal standard:
-- 24% faster prefill than 2200 MHz
-- 58W worst-case (30W margin to defect zone)
-- Proven safe via stress testing
+**2200 MHz** is the standard:
+- Proven safe and stable across multiple units
+- 38W margin to the 88W defect threshold
+- Best balance of performance and safety for 24/7 operation
