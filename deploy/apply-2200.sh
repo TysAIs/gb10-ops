@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Apply 2200 MHz clock cap to all DGX Sparks with systemd persistence.
+# Apply the 2200 MHz GPU clock cap to GB10 nodes with systemd persistence.
 # Based on miaai-lab/sparkLimiter deployment pattern.
 #
 # Usage:
-#   ./apply-2200.sh                    # auto-discover Sparks
+#   ./apply-2200.sh                    # auto-discover nodes (or set GB10_HOSTS)
 #   ./apply-2200.sh spark1 spark2      # specific hosts
 #   ./apply-2200.sh --uninstall        # remove cap, restore defaults
 
@@ -14,7 +14,7 @@ SERVICE="gb10-clock-cap"
 UNIT_PATH="/etc/systemd/system/${SERVICE}.service"
 
 if [ "$1" = "--uninstall" ]; then
-    echo "Removing clock cap from all Sparks..."
+    echo "Removing clock cap from all nodes..."
     for host in "${@:2}"; do
         [ -z "$host" ] && continue
         echo "=== $host ==="
@@ -23,12 +23,16 @@ if [ "$1" = "--uninstall" ]; then
     exit 0
 fi
 
-# Auto-discover or use provided hosts
+# Hosts come from arguments, else $GB10_HOSTS (space-separated), else a
+# small auto-discovery probe of generic candidate names. Probing is safe:
+# a candidate is only used if it answers SSH and reports a GB10 GPU.
 HOSTS=("$@")
+if [ ${#HOSTS[@]} -eq 0 ] && [ -n "$GB10_HOSTS" ]; then
+    read -ra HOSTS <<< "$GB10_HOSTS"
+fi
 if [ ${#HOSTS[@]} -eq 0 ]; then
-    echo "Auto-discovering Sparks..."
-    # Simple discovery: check common hostnames/IPs
-    for h in 192.0.2.4 192.0.2.23 node1 node2; do
+    echo "Auto-discovering GB10 nodes..."
+    for h in spark1 spark2 spark3 spark4 dgx-spark gb10; do
         if ssh -o ConnectTimeout=3 -o BatchMode=yes "$h" "nvidia-smi -L" 2>/dev/null | grep -qi "GB10"; then
             HOSTS+=("$h")
             echo "Found: $h"
@@ -37,7 +41,7 @@ if [ ${#HOSTS[@]} -eq 0 ]; then
 fi
 
 if [ ${#HOSTS[@]} -eq 0 ]; then
-    echo "No Sparks found. Provide hosts manually: ./apply-2200.sh user@host1 user@host2"
+    echo "No GB10 nodes found. Provide hosts manually: ./apply-2200.sh user@host1 user@host2 (or set GB10_HOSTS)"
     exit 1
 fi
 
@@ -69,4 +73,4 @@ for host in "${HOSTS[@]}"; do
 done
 
 echo ""
-echo "Done. 2200 MHz cap applied to ${#HOSTS[@]} Spark(s)."
+echo "Done. 2200 MHz cap applied to ${#HOSTS[@]} node(s)."

@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
-# Fan pre-cooling for DGX Spark
+# Fan pre-cooling for GB10 — OPTIONAL, not part of the gb10-ops standard.
 # Boost fans BEFORE heavy workloads, not after temps rise.
+# The standard story is stock EC thermal behavior + the 2200 MHz cap.
+#
+# Caveats before you install the tool this wraps:
+#   - Owen's dgx-spark-fan-control is validated on EC 3.5.8 and
+#     UNTESTED on EC 3.13.7.
+#   - Secure Boot is enabled on GB10 nodes: its kernel module needs a
+#     MOK signing key enrolled via a console reboot.
 # Requires: https://github.com/christopherowen/dgx-spark-fan-control
 #
 # Usage: ./precool.sh [level] [wait_seconds]

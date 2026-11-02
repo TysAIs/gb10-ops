@@ -1,52 +1,61 @@
 #!/usr/bin/env bash
-# GB10 Proper Clock-Cap Sweep
-# Uses llama-benchy (the correct tool) with proper methodology.
-# Tests: 2000, 2100, 2200, 2300 MHz static caps.
+# GB10 clock-cap sweep — research tool, NOT the standard.
+# The standard is 2200 MHz (deploy/apply-2200.sh). This sweep measures
+# other caps for comparison and always restores 2200 MHz on exit.
+# Uses llama-benchy (the correct tool): pp=2048, tg=128, 3 runs per cap.
 #
-# For each cap:
-#   - Sets cap on BOTH Sparks (node1 + node2)
-#   - Samples power/temp/clock in background
-#   - Runs llama-benchy with pp=2048, tg=128, 3 runs
-#   - Records results
+# Required environment (use YOUR nodes / endpoint / model):
+#   SPARK1=gb10@node1  SPARK2=gb10@node2        # two nodes in the setup
+#   VLLM_URL=http://node1:8000/v1           # serving endpoint
+#   MODEL=<served model name>
+# Optional:
+#   CAPS="2000 2100 2200"                   # caps to test
 
 set -e
 
-SPARK1="gb10@192.0.2.4"  # node1 (head)
-SPARK2="gb10@192.0.2.23"  # node2 (worker)
-VLLM_URL="http://192.0.2.4:8000/v1"
-MODEL="Qwen/Qwen3.8-Flash-Next-Uncensored"
+: "${SPARK1:?set SPARK1, e.g. gb10@node1}"
+: "${SPARK2:?set SPARK2, e.g. gb10@node2}"
+: "${VLLM_URL:?set VLLM_URL, e.g. http://node1:8000/v1}"
+: "${MODEL:?set MODEL to the served model name}"
+CAPS="${CAPS:-2000 2100 2200}"
 RESULTS_DIR="/tmp/sweep-results-$(date +%Y%m%d-%H%M%S)"
 
 mkdir -p "$RESULTS_DIR"
 log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$RESULTS_DIR/sweep.log"; }
 
 set_cap() {
-    local mhz=$1
-    log "Setting cap to ${mhz} MHz on both Sparks..."
-    ssh -o ConnectTimeout=8 -o StrictHostKeyChecking=no "$SPARK1" "sudo nvidia-smi -lgc 0,$mhz" 2>&1 | grep -q "All done" && log "  node1: OK" || log "  node1: FAILED"
-    ssh -o ConnectTimeout=8 -o StrictHostKeyChecking=no "$SPARK2" "sudo nvidia-smi -lgc 0,$mhz" 2>&1 | grep -q "All done" && log "  node2: OK" || log "  node2: FAILED"
+    local mhz=$1 host
+    log "Setting cap to ${mhz} MHz on both nodes..."
+    for host in "$SPARK1" "$SPARK2"; do
+        ssh -o ConnectTimeout=8 -o StrictHostKeyChecking=no "$host" "sudo nvidia-smi -lgc 0,$mhz" 2>&1 | grep -q "All done" \
+            && log "  $host: OK" || log "  $host: FAILED"
+    done
 }
 
-# Safety: restore 2200 on exit
-trap 'log "Restoring 2200 MHz..."; ssh -o StrictHostKeyChecking=no '"$SPARK1"' "sudo nvidia-smi -lgc 0,2200" 2>/dev/null; ssh -o StrictHostKeyChecking=no '"$SPARK2"' "sudo nvidia-smi -lgc 0,2200" 2>/dev/null; log "Done."; exit' EXIT INT TERM
+restore() {
+    log "Restoring 2200 MHz..."
+    ssh -o StrictHostKeyChecking=no "$SPARK1" "sudo nvidia-smi -lgc 0,2200" 2>/dev/null || true
+    ssh -o StrictHostKeyChecking=no "$SPARK2" "sudo nvidia-smi -lgc 0,2200" 2>/dev/null || true
+    log "Done."
+}
+trap restore EXIT INT TERM
 
 log "GB10 Clock-Cap Sweep starting"
 log "Results: $RESULTS_DIR"
 log ""
 
-for MHZ in 2000 2100 2200 2300; do
+for MHZ in $CAPS; do
     log "===== ${MHZ} MHz ====="
     set_cap "$MHZ"
     sleep 10
 
-    # Start background power/temp sampling on node1
+    # Background power/temp sampling on SPARK1
     log "Starting metrics sampling..."
     ssh -o StrictHostKeyChecking=no "$SPARK1" \
         "for i in \$(seq 1 120); do nvidia-smi --query-gpu=timestamp,power.draw,temperature.gpu,clocks.gr --format=csv,noheader; sleep 2; done" \
         > "$RESULTS_DIR/metrics-${MHZ}.csv" 2>/dev/null &
     METRICS_PID=$!
 
-    # Run llama-benchy
     log "Running llama-benchy (pp=2048, tg=128, 3 runs)..."
     uvx llama-benchy \
         --base-url "$VLLM_URL" \
@@ -60,7 +69,6 @@ for MHZ in 2000 2100 2200 2300; do
         --format json \
         2>&1 | tee "$RESULTS_DIR/benchy-${MHZ}.json" | tail -20
 
-    # Stop metrics sampling
     kill $METRICS_PID 2>/dev/null || true
     wait $METRICS_PID 2>/dev/null || true
 
