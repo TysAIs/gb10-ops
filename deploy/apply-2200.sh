@@ -74,7 +74,7 @@ for host in "${HOSTS[@]}"; do
     # Install systemd service for persistence and start it now
     echo "$UNIT" | ssh -t "$host" "sudo tee ${UNIT_PATH} > /dev/null && sudo systemctl daemon-reload && sudo systemctl enable --now ${SERVICE}.service && echo 'Service installed'"
     # Verify: service active. clocks.max can still read 3003 under a
-    # lock on GB10 — the real proof is ~2190 MHz SM clock under load.
+    # lock on GB10. The real proof is ~2190 MHz SM clock under load.
     ssh -t "$host" "systemctl is-active ${SERVICE}.service && nvidia-smi --query-gpu=clocks.sm,clocks.max.sm --format=csv,noheader" \
         && echo "Verified: service active (confirm ~2190 MHz under load)" || echo "VERIFY FAILED"
 done

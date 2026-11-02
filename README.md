@@ -2,8 +2,8 @@
 
 ![GB10 chip with electricity running through it](assets/gb10-headline.jpg)
 
-> **The GB10 setup standard** — for any GB10 device, any node count.
-> Measured on real hardware; written so a human — or an AI agent —
+> **The GB10 setup standard**: for any GB10 device, any node count.
+> Measured on real hardware; written so a human, or an AI agent,
 > can apply and verify it.
 
 ## The standard
@@ -12,20 +12,22 @@
 |---|---|---|
 | GPU clock cap | **2200 MHz**, persisted by `gb10-clock-cap.service` | `deploy/apply-2200.sh` |
 | CPU clock cap | **2808 MHz** (X925 capped to the A725 ceiling), persisted by `gb10-cpu-cap.service` | `deploy/apply-2808.sh`, `docs/CPU-TUNING.md` |
-| Kernel | **Pinned `6.17.0-1032-nvidia`** with apt-mark holds, same kernel on every node | `docs/HARDENING.md` |
+| Kernel | **Pinned `6.17.0-1032-nvidia`** with apt-mark holds; don't update to the latest kernel yet | `docs/HARDENING.md` |
 | Headless | `multi-user.target`, display stack off | `docs/DGX-OS-7.6-HEADLESS.md` |
 | Hardening | CVE sysctls + nftables LSRR/SSRR drop | `docs/HARDENING.md` |
 | Fabric (2+ nodes) | 200G ConnectX-7, twin IPs, MTU 9000, RDMA verified | `docs/QUAD-STACK.md` |
-| Node user | `gb10` (uid 1000) — example name; use your own consistently | — |
+| Node user | `gb10` (uid 1000), example name; use your own consistently | this file |
 
-**Never:** upgrade to DGX OS 7.6 kernel `7.0.0-1019` (NCCL/RoCE ENOMEM
-regression, GPU work 1.5–2.4x slower) or `7.0.0-1024` (idle resets /
-bootloops); install `doca-ofed` or the dkms MFT package (breaks the
+**Don't update to the latest kernel yet:** the standard stays pinned
+to `6.17.0-1032-nvidia` because the newest kernels are known-bad:
+DGX OS 7.6's `7.0.0-1019` (NCCL/RoCE ENOMEM regression, GPU work
+1.5–2.4x slower) and `7.0.0-1024` (idle resets / bootloops). Also
+never install `doca-ofed` or the dkms MFT package (breaks the
 ConnectX-7). Details in `docs/HARDENING.md`.
 
 ### Why 2200 MHz GPU?
 
-GB10 units can hard power-off at ~88W GPU draw — a power-delivery defect
+GB10 units can hard power-off at ~88W GPU draw, a power-delivery defect
 NVIDIA acknowledged in July 2026 (see `docs/POWER-DELIVERY.md`). The cap
 keeps power well clear of it:
 
@@ -41,13 +43,13 @@ caps; higher caps showed no meaningful gain, so 2200 is the standard.
 ### Why 2808 MHz CPU?
 
 A/B v2 against a live serving stack (44 paired ABBA runs): ≤0.24%
-serving cost — within noise — and ~15°C cooler on all-core CPU load.
+serving cost, within noise, and ~15°C cooler on all-core CPU load.
 Evidence: `docs/CPU-TUNING.md`.
 
 ## First-boot checklist (per node)
 
 1. Create user `gb10` (uid 1000) or your equivalent; confirm SSH in.
-2. **PD-controller firmware check:** `fwupdmgr get-devices` — the USB PD
+2. **PD-controller firmware check:** `fwupdmgr get-devices`: the USB PD
    device must not sit at factory stub `0x00000001` (a silent fwupd
    failure can leave it there; re-running `fwupdmgr update` fixed one
    unit to `0x00000519`). Verify the version actually changed.
@@ -68,16 +70,16 @@ Evidence: `docs/CPU-TUNING.md`.
 ./deploy/apply-2200.sh --uninstall gb10@node1  # remove GPU cap
 ```
 
-Example hostnames/IPs are examples — substitute your own. The scripts
+Example hostnames/IPs are examples. Substitute your own. The scripts
 set the cap immediately, install the persistence service, and verify
-per host. Note: `clocks.max` can still read 3003 under a lock on GB10 —
+per host. Note: `clocks.max` can still read 3003 under a lock on GB10;
 verify under load (BF16 GEMM pins SM at ~2190 MHz).
 
 ## Power / recovery
 
 - **Never test uncapped** without physical access. Hard power-off needs
   AC unplugged 30–60s; a reboot does not fix it.
-- **Wake-on-LAN does not reliably wake GB10 nodes** — the EC cuts NIC
+- **Wake-on-LAN does not reliably wake GB10 nodes**: the EC cuts NIC
   standby power in S5. Real remote recovery = UEFI *After Power Loss →
   Auto Boot* + a switched PDU / smart plug.
 - Apply caps on **every** node in a multi-node setup; mismatched caps
@@ -108,14 +110,14 @@ python3 spark-gpu-throttle-check.py -n 60   # on the node
 ## Serving note: Hugging Face cache on NFS
 
 `huggingface_hub` 1.27 stores its token inside `~/.cache/huggingface`
-and hardens that directory to mode 700 — which breaks NFS-exported
+and hardens that directory to mode 700, which breaks NFS-exported
 cache reads under `root_squash`. Keep credentials out of NFS-exported
 trees and keep the exported cache directory traversable (755).
 
 ## Fan control (optional, not the standard)
 
 Stock EC thermal behavior with the 2200 MHz cap is the standard story.
-Fan tools are documented-optional only — none is a default step:
+Fan tools are documented-optional only; none is a default step:
 
 - Owen's `dgx-spark-fan-control` (used by `fan-control/precool.sh`):
   validated on EC 3.5.8, **untested on EC 3.13.7**.
@@ -129,9 +131,11 @@ Fan tools are documented-optional only — none is a default step:
 
 ```
 gb10-ops/
-├── README.md                  # This file — the standard
+├── README.md                  # This file: the standard
 ├── LICENSE                    # MIT
 ├── DESCRIPTION-CHANGE.md      # GitHub repo description (final text)
+├── assets/
+│   └── gb10-headline.jpg      # README banner image
 ├── deploy/
 │   ├── apply-2200.sh          # GPU cap → gb10-clock-cap.service
 │   └── apply-2808.sh          # CPU cap → gb10-cpu-cap.service
@@ -139,7 +143,7 @@ gb10-ops/
 │   ├── CPU-TUNING.md          # CPU cap evidence (A/B v2 + burn test)
 │   ├── POWER-DELIVERY.md      # Defect research and methodology
 │   ├── HARDENING.md           # Kernel pin + CVE mitigations
-│   ├── DGX-OS-7.6-HEADLESS.md # Headless standard; why not the 7.6 kernel
+│   ├── DGX-OS-7.6-HEADLESS.md # Headless standard; why not to update the kernel yet
 │   ├── QUAD-STACK.md          # N-node 200G fabric (any node count)
 │   └── DEEPSEEK-PLANNING.md   # Serving-recipe notes (not the standard)
 ├── fan-control/

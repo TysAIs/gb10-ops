@@ -1,4 +1,4 @@
-# CPU tuning on GB10 — measured (node1, 2026-11-02)
+# CPU tuning on GB10: measured (node1, 2026-11-02)
 
 GB10: 10x Cortex-X925 (hw max 3900 MHz) + 10x Cortex-A725 (hw max 2808 MHz),
 one cpufreq policy per CPU. CPPC auto_select ships ON (=1); with it on,
@@ -29,7 +29,7 @@ live with no restart, against the 4-node TensorFold DeepSeek endpoint.
 | Decode 16 streams, aggregate tok/s | 209.66 | 209.87 | +0.10% |
 
 Every delta is inside the run spread: any true serving cost of the cap
-is under ~0.25%. (The burn test below measures something else — a pure
+is under ~0.25%. (The burn test below measures something else: a pure
 all-core CPU workload, where the cap costs real throughput and buys
 ~15 C. Serving is not CPU-bound at these levels.) Full run data: goal
 workspace hidden_files/cpu-ab-v2/ (results.json, summary.md).
@@ -48,24 +48,24 @@ token, 512-token decodes, cap toggled live on the same 4-node endpoint.
 | Decode, 6 streams, per stream | 29.0 tok/s | 29.1 tok/s (aggregate 157 vs 159) |
 | TTFT (short / ~18K / ~67K) | 0.35 / 5.6 / 20.4 s | identical |
 
-The two workloads whose means differ point in opposite directions —
+The two workloads whose means differ point in opposite directions,
 the signature of run-to-run noise, not a cap effect. Conclusion
 unchanged: no measurable serving cost. Note the 6-stream row:
 parallel agent sessions split a fixed aggregate (~29 tok/s each at
-6-way), which is where interactive slowness actually comes from —
+6-way), which is where interactive slowness actually comes from,
 not the cap.
 
 ### Apply / verify / restore (root, per node)
 
 ```bash
 BASE=/sys/devices/system/cpu/cpufreq
-# Apply — auto_select OFF first, or the cap is ignored by hardware
+# Apply: auto_select OFF first, or the cap is ignored by hardware
 for d in $BASE/policy*; do echo 0 > $d/auto_select; done
 for d in $BASE/policy*; do echo 2808000 > $d/scaling_max_freq; done
-# Verify — expect 20 and 20 (of 20 policies)
+# Verify: expect 20 and 20 (of 20 policies)
 grep -l '^2808000$' $BASE/policy*/scaling_max_freq | wc -l
 grep -l '^0$' $BASE/policy*/auto_select | wc -l
-# Restore stock — hardware max back per policy, auto_select back ON
+# Restore stock: hardware max back per policy, auto_select back ON
 for d in $BASE/policy*; do cat $d/cpuinfo_max_freq > $d/scaling_max_freq; done
 for d in $BASE/policy*; do echo 1 > $d/auto_select; done
 ```
