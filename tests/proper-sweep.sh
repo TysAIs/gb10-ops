@@ -5,7 +5,7 @@
 # Uses llama-benchy (the correct tool): pp=2048, tg=128, 3 runs per cap.
 #
 # Required environment (use YOUR nodes / endpoint / model):
-#   SPARK1=gb10@node1  SPARK2=gb10@node2        # two nodes in the setup
+#   NODE1=gb10@node1  NODE2=gb10@node2        # two nodes in the setup
 #   VLLM_URL=http://node1:8000/v1           # serving endpoint
 #   MODEL=<served model name>
 # Optional:
@@ -13,8 +13,8 @@
 
 set -e
 
-: "${SPARK1:?set SPARK1, e.g. gb10@node1}"
-: "${SPARK2:?set SPARK2, e.g. gb10@node2}"
+: "${NODE1:?set NODE1, e.g. gb10@node1}"
+: "${NODE2:?set NODE2, e.g. gb10@node2}"
 : "${VLLM_URL:?set VLLM_URL, e.g. http://node1:8000/v1}"
 : "${MODEL:?set MODEL to the served model name}"
 CAPS="${CAPS:-2000 2100 2200}"
@@ -26,7 +26,7 @@ log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$RESULTS_DIR/sweep.log"; }
 set_cap() {
     local mhz=$1 host
     log "Setting cap to ${mhz} MHz on both nodes..."
-    for host in "$SPARK1" "$SPARK2"; do
+    for host in "$NODE1" "$NODE2"; do
         ssh -o ConnectTimeout=8 -o StrictHostKeyChecking=no "$host" "sudo nvidia-smi -lgc 0,$mhz" 2>&1 | grep -q "All done" \
             && log "  $host: OK" || log "  $host: FAILED"
     done
@@ -34,8 +34,8 @@ set_cap() {
 
 restore() {
     log "Restoring 2200 MHz..."
-    ssh -o StrictHostKeyChecking=no "$SPARK1" "sudo nvidia-smi -lgc 0,2200" 2>/dev/null || true
-    ssh -o StrictHostKeyChecking=no "$SPARK2" "sudo nvidia-smi -lgc 0,2200" 2>/dev/null || true
+    ssh -o StrictHostKeyChecking=no "$NODE1" "sudo nvidia-smi -lgc 0,2200" 2>/dev/null || true
+    ssh -o StrictHostKeyChecking=no "$NODE2" "sudo nvidia-smi -lgc 0,2200" 2>/dev/null || true
     log "Done."
 }
 trap restore EXIT INT TERM
@@ -49,9 +49,9 @@ for MHZ in $CAPS; do
     set_cap "$MHZ"
     sleep 10
 
-    # Background power/temp sampling on SPARK1
+    # Background power/temp sampling on NODE1
     log "Starting metrics sampling..."
-    ssh -o StrictHostKeyChecking=no "$SPARK1" \
+    ssh -o StrictHostKeyChecking=no "$NODE1" \
         "for i in \$(seq 1 120); do nvidia-smi --query-gpu=timestamp,power.draw,temperature.gpu,clocks.gr --format=csv,noheader; sleep 2; done" \
         > "$RESULTS_DIR/metrics-${MHZ}.csv" 2>/dev/null &
     METRICS_PID=$!

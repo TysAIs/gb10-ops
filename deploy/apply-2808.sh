@@ -10,7 +10,7 @@
 #
 # Usage:
 #   ./apply-2808.sh                    # nodes from $GB10_HOSTS
-#   ./apply-2808.sh spark1 spark2      # specific nodes
+#   ./apply-2808.sh node1 node2        # specific nodes
 #   ./apply-2808.sh --uninstall        # remove cap, restore defaults
 
 set -e

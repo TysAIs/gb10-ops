@@ -1,8 +1,8 @@
 # gb10-ops
 
-> **The GB10 setup standard** — any GB10 device (DGX Spark, Acer
-> Veriton GN100, others), any node count. Measured on real hardware;
-> written so a human — or an AI agent — can apply and verify it.
+> **The GB10 setup standard** — for any GB10 device, any node count.
+> Measured on real hardware; written so a human — or an AI agent —
+> can apply and verify it.
 
 ## The standard
 
