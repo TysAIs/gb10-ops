@@ -1,5 +1,7 @@
 # gb10-ops
 
+![GB10 chip with electricity running through it](assets/gb10-headline.jpg)
+
 > **The GB10 setup standard** — for any GB10 device, any node count.
 > Measured on real hardware; written so a human — or an AI agent —
 > can apply and verify it.
