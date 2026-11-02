@@ -13,12 +13,16 @@ All nodes are inference nodes only; all harness/admin work runs from the host (A
 | node4 (node4) | 203.0.113.14 | 6.17.0-1032-nvidia | 192.0.2.14/24 | 198.51.100.14/24 | 200G |
 
 Node2 note (RESOLVED 2026-11-02): node2 long refused 200G on qsfp56-dd-1 while
-its CX7, kernel, and firmware matched node1 exactly. Root cause: node2's cable
-is an Amphenol NJAAKK-AU06 (QSFP112) and the CRS812's dd-1 cage cannot read that
-module's EEPROM (monitor shows module-present but no vendor/serial/checksum), so it
-will not train it at any speed. The same cable trains 200G in dd-2 and in the native
-QSFP56 cages; dd-1 reads a QSFP56 NJAAKK-N911 fine. It is the dd-1 + QSFP112 combo.
-Fix: swap the two DD-cage cables so each cable sits in a cage that can read it.
+its CX7, kernel, and firmware matched node1 exactly. Root cause: in dd-1 the
+switch could not read the EEPROM of node2's specific cable unit (Amphenol
+NJAAKK-AU06 s/n 0113030026352672) - monitor showed module-present but no
+vendor/serial/checksum, and the port would not train at any speed. Triple-checked:
+ALL four fleet cables are the same Amphenol NJAAKK QSFP112 400G family (N911 is
+NVIDIA's retail variant of the same spec) with byte-identical SFF-8636 EEPROM
+layouts (id 0x11), so it is NOT a QSFP112-vs-QSFP56 issue. The AU06 unit reads and
+trains 200G in dd-2 and both native cages, and dd-1 reads an N911 unit fine: the
+failure is that one cable unit in that one cage (marginal module-read path, exact
+mechanism unknown). Fix: swap the two DD-cage cables so the AU06 sits in dd-2.
 Final cable map (all 200G, EEPROM checksum good x4, full mesh verified):
 node1 (N911 s/n APF26029111NTM) -> qsfp56-dd-1-1; node2 (AU06 s/n
 0113030026352672) -> qsfp56-dd-2-1; node3 (N911 s/n APF25269118DEC) ->
