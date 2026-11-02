@@ -61,8 +61,8 @@ Evidence: `docs/CPU-TUNING.md`.
 ## Deployment
 
 ```bash
-./deploy/apply-2200.sh gb10@node1 gb10@node2   # GPU cap; no args = auto-discover
-./deploy/apply-2808.sh gb10@node1 gb10@node2   # CPU cap
+./deploy/apply-2200.sh gb10@node1 gb10@node2   # GPU cap (SSH user@host); no args = auto-discover
+./deploy/apply-2808.sh node1 node2         # CPU cap (Tailscale node names, reached as root)
 ./deploy/apply-2200.sh --uninstall gb10@node1  # remove GPU cap
 ```
 
