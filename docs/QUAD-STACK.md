@@ -8,15 +8,27 @@ All nodes are inference nodes only; all harness/admin work runs from the host (A
 | Node | Tailnet | Kernel | Fabric A (rocep1s0f1) | Fabric B (roceP2p1s0f1) | Link |
 |---|---|---|---|---|---|
 | node1 | 203.0.113.11 | 6.17.0-1032-nvidia | 192.0.2.11/24 | 198.51.100.11/24 | 200G |
-| node2 | 203.0.113.12 | 6.17.0-1032-nvidia | 192.0.2.12/24 | 198.51.100.12/24 | 100G (see note) |
+| node2 | 203.0.113.12 | 6.17.0-1032-nvidia | 192.0.2.12/24 | 198.51.100.12/24 | 200G |
 | node3 (node3) | 203.0.113.13 | 6.17.0-1032-nvidia | 192.0.2.13/24 | 198.51.100.13/24 | 200G |
 | node4 (node4) | 203.0.113.14 | 6.17.0-1032-nvidia | 192.0.2.14/24 | 198.51.100.14/24 | 200G |
 
-Node2 note: its CX7 disables the port on any 200G train attempt and self-recovers
-at forced 100G. Kernel and CX7 firmware (28.50.1002) match node1 exactly.
-Remaining suspects: the switch cage/cable path (marginal at 200G PAM4) or CX7 NVRAM
-port config. Discriminator: swap cables at the switch end (node2 <-> node3) -
-if the refusal follows the port, it is cage/cable; if it follows the node, NVRAM.
+Node2 note (RESOLVED 2026-11-02): node2 long refused 200G on qsfp56-dd-1 while
+its CX7, kernel, and firmware matched node1 exactly. Root cause: node2's cable
+is an Amphenol NJAAKK-AU06 (QSFP112) and the CRS812's dd-1 cage cannot read that
+module's EEPROM (monitor shows module-present but no vendor/serial/checksum), so it
+will not train it at any speed. The same cable trains 200G in dd-2 and in the native
+QSFP56 cages; dd-1 reads a QSFP56 NJAAKK-N911 fine. It is the dd-1 + QSFP112 combo.
+Fix: swap the two DD-cage cables so each cable sits in a cage that can read it.
+Final cable map (all 200G, EEPROM checksum good x4, full mesh verified):
+node1 (N911 s/n APF26029111NTM) -> qsfp56-dd-1-1; node2 (AU06 s/n
+0113030026352672) -> qsfp56-dd-2-1; node3 (N911 s/n APF25269118DEC) ->
+qsfp56-1-1; node4 (AU06 s/n 01130300258K0286) -> qsfp56-2-1.
+Diagnostic method: ethtool -m on each NIC + switch monitor sfp-vendor-serial,
+matched by serial number. If a cage shows module-present with no EEPROM data,
+suspect the cage/module-standard combo before the node or the cable.
+A published twin of this failure exists (MikroTik forum, CRS804 thread 272832,
+same 98DX7335 chip + N911 cables); MikroTik support blamed passive-DAC
+compatibility and said an RMA would not necessarily change the behavior.
 
 ## Fabric facts
 
@@ -28,12 +40,17 @@ if the refusal follows the port, it is cage/cable; if it follows the node, NVRAM
   jumbo frames end to end (ping -M do -s 8972 clean); full ping mesh.
 - CX7 hotplug flag: /etc/nvidia/cx7-hotplug-enabled must NOT exist, or the 200G
   lanes will not train. Remove it (root) - no reboot needed on healthy nodes.
-- Switch (CRS812, RouterOS 7.25): fabric ports forced, auto-negotiation=no.
-  200G ports: speed=200G-baseCR4 fec-mode=fec91. Node2 port: 100G-baseCR4 fec auto.
-  All fabric ports mtu=9000 l2mtu=9216.
+- Switch (CRS812): RouterOS 7.26beta4 + switch-marvell 7.26beta4 + RouterBOARD
+  7.26beta4 (keep all three matched; it shipped 7.25 with board firmware 7.23.4).
+  Fabric ports forced, auto-negotiation=no, speed=200G-baseCR4 fec-mode=fec91,
+  mtu=9000 l2mtu=9216. Config backup: quad-200g-complete-20261102 on the switch.
+- NEVER disable a 400G DD port on RouterOS <=7.25: that version can corrupt the
+  attached DAC's EEPROM when a DD port is disabled (fixed in 7.26beta4). Also,
+  disabling or enabling any sub-interface of a DD port reconfigures the whole
+  port group.
 - WARNING: on this switch with Amphenol DACs, any port re-init can fail module
   auto-init (status auto-init-failed). Recovery: force speed=100G-baseCR4
-  fec-mode=auto, which re-trains reliably; then step back up.
+  fec-mode=auto, which re-trains reliably on readable modules; then step back up.
 - Keep fabric ports in the single default bridge (a second bridge collapses RDMA).
   Note the default bridge also carries the LAN, so unconfigured fabric NICs can
   pull LAN DHCP - always set fabric IPs statically (netplan 40-cx7.yaml per node).
