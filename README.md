@@ -30,6 +30,27 @@ vs higher caps (within noise), so 2200 remains the recommended setting.
 - Decode is memory-bound (~73 tok/s), flat across caps
 - All caps 2000-2200 are safe; 2200 is the best balance of performance and safety
 
+## DGX OS 7.6 and Headless Mode
+
+DGX OS 7.6.0 adds Dynamic Display Reserved Memory: a UEFI option that
+shrinks the display carveout to 512 MB minimum when no display is
+connected, roughly 2-4 GB back versus a loaded desktop. It needs EC 3.13.7
++ SoC firmware, and it is a per-node UEFI setting, not an SSH command.
+See `docs/DGX-OS-7.6-HEADLESS.md`. The 2200 MHz clock cap still applies
+on headless nodes.
+
+## Quad Stack (2x Spark + 2x Veriton GN100 + MikroTik CRS812)
+
+Quad-stack setup, MikroTik firmware/link audit, Acer visibility rules,
+and node2 FE recovery are in `docs/QUAD-STACK.md`. Status Oct 29, 2026:
+not online yet — do not claim it until all 4 nodes pass verification.
+
+## DeepSeek Planning
+
+Mia AI lab DeepSeek V4.1 Flash planning is in
+`docs/DEEPSEEK-PLANNING.md`, gated on quad verification. It is a 2-Spark
+recipe, not a 4-node recipe — the quad decision comes after verification.
+
 ## The Power-Delivery Defect
 
 GB10 units can hard power-off (no logs, instant death) at ~88W GPU draw.
@@ -43,11 +64,14 @@ See `docs/POWER-DELIVERY.md` for full research.
 
 ```
 gb10-ops/
-├── README.md              # This file
+├── README.md              # This file — 2200 MHz standard
 ├── deploy/
 │   └── apply-2200.sh      # One-command deployment to all Sparks
 ├── docs/
-│   └── POWER-DELIVERY.md  # Defect research, test results, methodology
+│   ├── POWER-DELIVERY.md  # Defect research, test results, methodology
+│   ├── DGX-OS-7.6-HEADLESS.md  # DGX OS 7.6, Dynamic Display Reserved Memory
+│   ├── QUAD-STACK.md      # 2x Spark + 2x Veriton GN100 + MikroTik CRS812
+│   └── DEEPSEEK-PLANNING.md   # Mia 2-Spark recipe, gated on verification
 ├── fan-control/
 │   └── precool.sh         # Optional fan pre-cooling (requires Owen's tool)
 └── tests/
