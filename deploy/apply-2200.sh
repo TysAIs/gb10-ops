@@ -4,7 +4,7 @@
 #
 # Usage:
 #   ./apply-2200.sh                    # auto-discover nodes (or set GB10_HOSTS)
-#   ./apply-2200.sh spark1 spark2      # specific hosts
+#   ./apply-2200.sh node1 node2        # specific hosts
 #   ./apply-2200.sh --uninstall        # remove cap, restore defaults
 
 set -e
@@ -35,7 +35,7 @@ if [ ${#HOSTS[@]} -eq 0 ] && [ -n "$GB10_HOSTS" ]; then
 fi
 if [ ${#HOSTS[@]} -eq 0 ]; then
     echo "Auto-discovering GB10 nodes..."
-    for h in spark1 spark2 spark3 spark4 dgx-spark gb10; do
+    for h in gb10 gb10-1 gb10-2 gb10-3 gb10-4 node1 node2 node3 node4; do
         if ssh -o ConnectTimeout=3 -o BatchMode=yes "$h" "nvidia-smi -L" 2>/dev/null | grep -qi "GB10"; then
             HOSTS+=("$h")
             echo "Found: $h"
