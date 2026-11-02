@@ -128,6 +128,7 @@ Fan tools are documented-optional only — none is a default step:
 ```
 gb10-ops/
 ├── README.md                  # This file — the standard
+├── LICENSE                    # MIT
 ├── DESCRIPTION-CHANGE.md      # GitHub repo description (final text)
 ├── deploy/
 │   ├── apply-2200.sh          # GPU cap → gb10-clock-cap.service

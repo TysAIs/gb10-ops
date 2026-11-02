@@ -66,6 +66,21 @@ Both twins must be listed, or traffic uses only half the link.
 5. **Bandwidth:** per-twin `ib_write_bw` ≈ 13.0 GB/s (~104 Gb/s) per
    twin is a healthy reference point.
 
+## Troubleshooting: port will not train at 200G — check the hotplug flag
+
+Some GB10 nodes ship with the file `/etc/nvidia/cx7-hotplug-enabled`
+present. With the flag set, a cabled ConnectX-7 port can refuse to
+train at 200G no matter what the switch is set to. If a port will not
+train after cabling and switch settings check out, remove the flag
+and re-test before swapping any hardware:
+
+```bash
+sudo rm -f /etc/nvidia/cx7-hotplug-enabled
+```
+
+(Fleet-found, Nov 2026: removing it took a port from no-train to
+200G/FEC91 with no reboot or power drain needed.)
+
 ## Troubleshooting: module present, EEPROM unread
 
 If a switch cage shows a module present but no vendor/serial/checksum,

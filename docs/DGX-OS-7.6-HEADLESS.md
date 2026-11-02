@@ -10,6 +10,12 @@ sudo systemctl disable --now gdm3   # or your display manager
 Verify: `systemctl get-default` → `multi-user.target`, and no display
 manager running after reboot.
 
+Headless also removes a known failure trigger: with the display
+stack enabled on an unattended node, the `nvidia-modeset` driver can
+spin a CPU at 100% indefinitely. A headless node never loads it, so
+the spin cannot start. (Trigger removal, observed on fleet hardware
+Oct 2026 — not a guarantee against every future driver bug.)
+
 **OS-level headless reclaims ZERO reserved RAM** — measured. Turning
 off the display stack stops the desktop using RAM, but the display
 carveout stays reserved until UEFI changes it.

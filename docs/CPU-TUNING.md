@@ -34,6 +34,27 @@ all-core CPU workload, where the cap costs real throughput and buys
 ~15 C. Serving is not CPU-bound at these levels.) Full run data: goal
 workspace hidden_files/cpu-ab-v2/ (results.json, summary.md).
 
+### Confirmation re-test (2026-11-02, later the same day)
+
+Independent re-test with a stricter harness: unique prompts every run
+(no TensorFold KV-cache reuse), TTFT measured to the first generated
+token, 512-token decodes, cap toggled live on the same 4-node endpoint.
+
+| Workload | Capped 2808 | Stock |
+|---|---|---|
+| Decode, ~340 tok prompt | 74.1 tok/s | 74.8 tok/s |
+| Decode, ~18K context | 73.7 tok/s | 79.2 tok/s (runs spread 72-87) |
+| Decode, ~67K context | 83.4 tok/s | 75.7 tok/s |
+| Decode, 6 streams, per stream | 29.0 tok/s | 29.1 tok/s (aggregate 157 vs 159) |
+| TTFT (short / ~18K / ~67K) | 0.35 / 5.6 / 20.4 s | identical |
+
+The two workloads whose means differ point in opposite directions —
+the signature of run-to-run noise, not a cap effect. Conclusion
+unchanged: no measurable serving cost. Note the 6-stream row:
+parallel agent sessions split a fixed aggregate (~29 tok/s each at
+6-way), which is where interactive slowness actually comes from —
+not the cap.
+
 ### Apply / verify / restore (root, per node)
 
 ```bash
