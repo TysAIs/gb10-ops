@@ -49,9 +49,13 @@ for d in $BASE/policy*; do cat $d/cpuinfo_max_freq > $d/scaling_max_freq; done
 for d in $BASE/policy*; do echo 1 > $d/auto_select; done
 ```
 
-Persistence mechanism: TODO — runtime-applied for now; a boot unit
-mirroring gb10-clock-cap.service is the planned shape. Until that lands,
-a reboot returns the CPUs to stock and the cap must be re-applied.
+Persistence: shipped. gb10-cpu-cap.service (oneshot, enabled at boot,
+mirrors gb10-clock-cap.service) runs /usr/local/bin/gb10-cpu-cap apply:
+auto_select=0 on every policy first, then scaling_max_freq=2808000 on
+every policy. Install or re-apply with deploy/apply-2808.sh (it installs
+the unit, starts it so the cap applies immediately, and verifies by
+reading back); --uninstall restores stock. Verified 2026-11-02 on all
+four nodes, including a stock-to-capped proof on node4.
 
 ## Method
 
