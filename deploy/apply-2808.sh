@@ -21,6 +21,10 @@ UNIT_PATH="/etc/systemd/system/${SERVICE}.service"
 HELPER_PATH="/usr/local/bin/${SERVICE}"
 
 if [ "$1" = "--uninstall" ]; then
+    if [ $# -lt 2 ]; then
+        echo "Usage: $0 --uninstall <node> [node ...]" >&2
+        exit 1
+    fi
     echo "Removing CPU clock cap from all nodes..."
     for host in "${@:2}"; do
         [ -z "$host" ] && continue

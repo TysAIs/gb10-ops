@@ -9,11 +9,14 @@
 
 set -e
 
-CLOCKS="0,2200"
 SERVICE="gb10-clock-cap"
 UNIT_PATH="/etc/systemd/system/${SERVICE}.service"
 
 if [ "$1" = "--uninstall" ]; then
+    if [ $# -lt 2 ]; then
+        echo "Usage: $0 --uninstall <user@host> [user@host ...]" >&2
+        exit 1
+    fi
     echo "Removing clock cap from all nodes..."
     for host in "${@:2}"; do
         [ -z "$host" ] && continue
@@ -68,8 +71,12 @@ for host in "${HOSTS[@]}"; do
     echo "=== $host ==="
     # Apply cap immediately
     ssh -t "$host" "sudo nvidia-smi -lgc 0,2200" 2>&1 | grep -q "All done" && echo "Cap applied" || echo "FAILED"
-    # Install systemd service for persistence
-    echo "$UNIT" | ssh -t "$host" "sudo tee ${UNIT_PATH} > /dev/null && sudo systemctl daemon-reload && sudo systemctl enable ${SERVICE}.service && echo 'Service installed'"
+    # Install systemd service for persistence and start it now
+    echo "$UNIT" | ssh -t "$host" "sudo tee ${UNIT_PATH} > /dev/null && sudo systemctl daemon-reload && sudo systemctl enable --now ${SERVICE}.service && echo 'Service installed'"
+    # Verify: service active. clocks.max can still read 3003 under a
+    # lock on GB10 — the real proof is ~2190 MHz SM clock under load.
+    ssh -t "$host" "systemctl is-active ${SERVICE}.service && nvidia-smi --query-gpu=clocks.sm,clocks.max.sm --format=csv,noheader" \
+        && echo "Verified: service active (confirm ~2190 MHz under load)" || echo "VERIFY FAILED"
 done
 
 echo ""
