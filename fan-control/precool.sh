@@ -10,8 +10,8 @@
 #     MOK signing key enrolled via a console reboot.
 # Requires: https://github.com/christopherowen/dgx-spark-fan-control
 #
-# Usage: ./precool.sh [level] [wait_seconds]
-#   ./precool.sh 8 120    # Level 8, wait 2 min
+# Usage: bash precool.sh [level] [wait_seconds]
+#   bash precool.sh 8 120    # Level 8, wait 2 min
 
 set -e
 LEVEL="${1:-8}"

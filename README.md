@@ -49,10 +49,14 @@ Evidence: `docs/CPU-TUNING.md`.
 ## First-boot checklist (per node)
 
 1. Create user `gb10` (uid 1000) or your equivalent; confirm SSH in.
-2. **PD-controller firmware check:** `fwupdmgr get-devices`: the USB PD
-   device must not sit at factory stub `0x00000001` (a silent fwupd
-   failure can leave it there; re-running `fwupdmgr update` fixed one
-   unit to `0x00000519`). Verify the version actually changed.
+2. **PD-controller firmware check:** `fwupdmgr get-devices`: the USB-C
+   PD controller appears as an entry named **UEFI Device Firmware**
+   (no "PD" in the name; when two such entries are listed, it is the
+   second one). It must read `0x00000519`, not the factory stub
+   `0x00000001` (a silent fwupd failure can leave it there; re-running
+   `fwupdmgr update` fixed one unit). Verify the version actually
+   changed. Some GB10 devices expose no such entry to fwupd at all;
+   then there is nothing to check.
 3. Confirm kernel is `6.17.0-1032-nvidia` (`uname -r`); apply the pin
    and holds in `docs/HARDENING.md`.
 4. Apply both clock caps (below) and verify under load.
@@ -65,14 +69,15 @@ Evidence: `docs/CPU-TUNING.md`.
 ## Deployment
 
 ```bash
-./deploy/apply-2200.sh gb10@node1 gb10@node2   # GPU cap (SSH user@host); no args = auto-discover
-./deploy/apply-2808.sh node1 node2         # CPU cap (Tailscale node names, reached as root)
-./deploy/apply-2200.sh --uninstall gb10@node1  # remove GPU cap
+bash deploy/apply-2200.sh gb10@node1 gb10@node2   # GPU cap (SSH user@host); no args = auto-discover
+bash deploy/apply-2808.sh node1 node2         # CPU cap (Tailscale node names, reached as root)
+bash deploy/apply-2200.sh --uninstall gb10@node1  # remove GPU cap
 ```
 
 Example hostnames/IPs are examples. Substitute your own. The scripts
 set the cap immediately, install the persistence service, and verify
-per host. Note: `clocks.max` can still read 3003 under a lock on GB10;
+per host. Run them via `bash` as shown: the executable bit is not
+guaranteed on every download route. Note: `clocks.max` can still read 3003 under a lock on GB10;
 verify under load (BF16 GEMM pins SM at ~2190 MHz).
 
 ## Power / recovery

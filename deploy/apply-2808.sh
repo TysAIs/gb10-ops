@@ -9,9 +9,9 @@
 # Run from a host that can reach the nodes over Tailscale SSH as root.
 #
 # Usage:
-#   ./apply-2808.sh                    # nodes from $GB10_HOSTS
-#   ./apply-2808.sh node1 node2        # specific nodes
-#   ./apply-2808.sh --uninstall        # remove cap, restore defaults
+#   bash apply-2808.sh                    # nodes from $GB10_HOSTS
+#   bash apply-2808.sh node1 node2        # specific nodes
+#   bash apply-2808.sh --uninstall        # remove cap, restore defaults
 
 set -e
 
@@ -41,7 +41,7 @@ if [ ${#HOSTS[@]} -eq 0 ] && [ -n "$GB10_HOSTS" ]; then
     read -ra HOSTS <<< "$GB10_HOSTS"
 fi
 if [ ${#HOSTS[@]} -eq 0 ]; then
-    echo "No nodes given. Usage: ./apply-2808.sh <node> [node ...] (or set GB10_HOSTS)"
+    echo "No nodes given. Usage: bash apply-2808.sh <node> [node ...] (or set GB10_HOSTS)"
     exit 1
 fi
 
