@@ -1,4 +1,8 @@
-# GitHub description — final text, ready to apply
+# GitHub description — final text (APPLIED 2026-11-02)
+
+Status: applied to the repository on 2026-11-02. This file remains as
+the record of the exact text; if the description ever needs changing,
+edit it here first, then re-apply.
 
 Final description (use exactly this):
 
