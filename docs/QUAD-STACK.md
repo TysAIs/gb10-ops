@@ -14,17 +14,18 @@ All nodes are inference nodes only; all harness/admin work runs from the host (A
 
 Node2 note (RESOLVED 2026-11-02): node2 long refused 200G on qsfp56-dd-1 while
 its CX7, kernel, and firmware matched node1 exactly. Root cause: in dd-1 the
-switch could not read the EEPROM of node2's specific cable unit (Amphenol
-NJAAKK-AU06 s/n 0113030026352672) - monitor showed module-present but no
+switch could not read the EEPROM of one specific cable unit (Amphenol
+NJAAKK-AU06 s/n 0113030026352672, then attached to node2) - monitor showed module-present but no
 vendor/serial/checksum, and the port would not train at any speed. Triple-checked:
 ALL four fleet cables are the same Amphenol NJAAKK QSFP112 400G family (N911 is
 NVIDIA's retail variant of the same spec) with byte-identical SFF-8636 EEPROM
 layouts (id 0x11), so it is NOT a QSFP112-vs-QSFP56 issue. The AU06 unit reads and
 trains 200G in dd-2 and both native cages, and dd-1 reads an N911 unit fine: the
 failure is that one cable unit in that one cage (marginal module-read path, exact
-mechanism unknown). Fix: swap the two DD-cage cables so the AU06 sits in dd-2.
-Final cable map (all 200G, EEPROM checksum good x4, full mesh verified):
-node1 (N911 s/n APF26029111NTM) -> qsfp56-dd-1-1; node2 (AU06 s/n
+mechanism unknown). Fix: swap the two DD-cage cables between dd-1 and dd-2 (the AU06 unit ended in dd-2).
+Final cable map (all 200G, EEPROM checksum good x4, full mesh verified;
+node attribution confirmed from BOTH ends by serial, Nov 2 2026):
+node2 (N911 s/n APF26029111NTM) -> qsfp56-dd-1-1; node1 (AU06 s/n
 0113030026352672) -> qsfp56-dd-2-1; node3 (N911 s/n APF25269118DEC) ->
 qsfp56-1-1; node4 (AU06 s/n 01130300258K0286) -> qsfp56-2-1.
 Diagnostic method: ethtool -m on each NIC + switch monitor sfp-vendor-serial,
