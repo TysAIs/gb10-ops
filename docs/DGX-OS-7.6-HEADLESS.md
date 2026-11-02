@@ -8,7 +8,9 @@ sudo systemctl disable --now gdm3   # or your display manager
 ```
 
 Verify: `systemctl get-default` → `multi-user.target`, and no display
-manager running after reboot.
+manager running after reboot. (On DGX OS, `gdm3` is an alias for
+`gdm.service`, so `systemctl is-enabled gdm3` may report `alias`; the
+default target is the operative check.)
 
 Headless also removes a known failure trigger: with the display
 stack enabled on an unattended node, the `nvidia-modeset` driver can
@@ -53,10 +55,14 @@ fwupdmgr update   # stages updates; a reboot activates them
   staged update ("Needs reboot") is not an applied update, verify
   versions with `fwupdmgr get-devices` after rebooting.
 - **Do not reboot a serving node without explicit approval.**
-- PD-controller check: the USB PD device must not sit at factory stub
-  `0x00000001`. A silent fwupd failure can leave it there; re-running
-  `fwupdmgr update` fixed one fleet unit to `0x00000519`. Always
-  confirm the version actually changed.
+- PD-controller check: in `fwupdmgr get-devices`, the USB-C PD
+  controller appears as an entry named **UEFI Device Firmware** (no
+  "PD" in the name; the second such entry when two are listed). It
+  must not sit at factory stub `0x00000001`: a silent fwupd failure
+  can leave it there. Re-running `fwupdmgr update` fixed one fleet
+  unit to `0x00000519`. Always confirm the version actually changed.
+  Some GB10 devices expose no PD entry to fwupd at all; then there
+  is nothing to check.
 
 ## Clock caps still apply
 

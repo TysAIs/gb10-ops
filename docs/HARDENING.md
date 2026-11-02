@@ -22,7 +22,10 @@ The newest kernels are known-bad:
 uname -r   # expect 6.17.0-1032-nvidia
 sudo apt-mark hold linux-image-6.17.0-1032-nvidia \
   linux-headers-6.17.0-1032-nvidia linux-modules-nvidia-580-open-6.17.0-1032-nvidia
-# Set GRUB_DEFAULT to the 1032 entry in /etc/default/grub, then:
+# In /etc/default/grub, set GRUB_DEFAULT to the 1032 entry (exact
+# string from the reference fleet; confirm yours with
+# `grep "6.17.0-1032" /boot/grub/grub.cfg | grep -m1 menuentry`):
+#   GRUB_DEFAULT="Advanced options for DGX OS GNU/Linux>DGX OS GNU/Linux, with Linux 6.17.0-1032-nvidia"
 sudo update-grub
 ```
 

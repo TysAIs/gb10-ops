@@ -8,7 +8,9 @@ Each GB10 node's ConnectX-7 port exposes **two PCIe functions** for one
 cabled port. The two ~100G halves the host sees (`rocep1s0f1` +
 `roceP2p1s0f1`, netdevs `enp1s0f1np1` + `enP2p1s0f1np1`) are twins of the
 **same** physical link, full 200G needs **both twins addressed, on
-different subnets**.
+different subnets**. Two sibling functions (the `f0` pair) also appear;
+they carry no fabric traffic, but pin them down in netplan too, exactly
+as in the example.
 
 ## Per-node addressing (netplan)
 
@@ -18,19 +20,30 @@ the last octet per node, same pattern on both subnets:
 ```yaml
 network:
   version: 2
+  renderer: NetworkManager
   ethernets:
+    enp1s0f0np0:
+      mtu: 9000
+      dhcp4: false
     enp1s0f1np1:
       addresses: [192.0.2.11/24]   # example
       mtu: 9000
+      dhcp4: false
+    enP2p1s0f0np0:
+      mtu: 9000
+      dhcp4: false
     enP2p1s0f1np1:
       addresses: [198.51.100.11/24]   # example
       mtu: 9000
+      dhcp4: false
 ```
 
 Rules:
 
 - Fabric IPs are **static, always**: unconfigured fabric NICs can pull
-  DHCP from a LAN sharing the switch, which silently breaks RDMA.
+  DHCP from a LAN sharing the switch, which silently breaks RDMA. Set
+  `dhcp4: false` on **all four** ConnectX functions, including the two
+  unaddressed `f0` siblings, exactly as in the example.
 - MTU **9000** on every node interface; switch ports at MTU 9000 /
   L2MTU **9216**.
 - Keep the fabric on a single L2 segment/bridge. Start **lossy** (no

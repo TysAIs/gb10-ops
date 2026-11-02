@@ -3,9 +3,9 @@
 # Based on miaai-lab/sparkLimiter deployment pattern.
 #
 # Usage:
-#   ./apply-2200.sh                    # auto-discover nodes (or set GB10_HOSTS)
-#   ./apply-2200.sh node1 node2        # specific hosts
-#   ./apply-2200.sh --uninstall        # remove cap, restore defaults
+#   bash apply-2200.sh                    # auto-discover nodes (or set GB10_HOSTS)
+#   bash apply-2200.sh node1 node2        # specific hosts
+#   bash apply-2200.sh --uninstall        # remove cap, restore defaults
 
 set -e
 
@@ -44,7 +44,7 @@ if [ ${#HOSTS[@]} -eq 0 ]; then
 fi
 
 if [ ${#HOSTS[@]} -eq 0 ]; then
-    echo "No GB10 nodes found. Provide hosts manually: ./apply-2200.sh user@host1 user@host2 (or set GB10_HOSTS)"
+    echo "No GB10 nodes found. Provide hosts manually: bash apply-2200.sh user@host1 user@host2 (or set GB10_HOSTS)"
     exit 1
 fi
 
