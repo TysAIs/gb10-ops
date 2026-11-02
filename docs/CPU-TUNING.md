@@ -1,4 +1,4 @@
-# CPU tuning on GB10: measured (node1, 2026-11-02)
+# CPU tuning on GB10: measured (2026-11-02)
 
 GB10: 10x Cortex-X925 (hw max 3900 MHz) + 10x Cortex-A725 (hw max 2808 MHz),
 one cpufreq policy per CPU. CPPC auto_select ships ON (=1); with it on,
@@ -9,7 +9,7 @@ auto_select=0 on every policy. Governor is performance stock.
 
 Fleet standard on every GB10 node: auto_select=0 and
 scaling_max_freq=2808000 on all 20 cpufreq policies (the X925s capped to
-the A725 ceiling; the A725s already live there). Decided by the operator,
+the A725 ceiling; the A725s already live there). Decided
 2026-11-02, on the A/B v2 evidence below. The cap toggles live with the
 serving stack up; no engine restart is needed.
 
@@ -76,7 +76,7 @@ auto_select=0 on every policy first, then scaling_max_freq=2808000 on
 every policy. Install or re-apply with deploy/apply-2808.sh (it installs
 the unit, starts it so the cap applies immediately, and verifies by
 reading back); --uninstall restores stock. Verified 2026-11-02 on all
-four nodes, including a stock-to-capped proof on node4.
+four nodes, including a stock-to-capped proof on one node.
 
 ## Method
 

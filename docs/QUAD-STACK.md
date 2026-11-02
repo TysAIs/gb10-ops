@@ -14,7 +14,8 @@ as in the example.
 
 ## Per-node addressing (netplan)
 
-One `/etc/netplan/40-cx7.yaml` per node. Example for node 1: increment
+One `/etc/netplan/40-cx7.yaml` per node. Example for node 1
+(documentation-range IPs; substitute your own): increment
 the last octet per node, same pattern on both subnets:
 
 ```yaml

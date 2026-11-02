@@ -16,7 +16,7 @@
 | Headless | `multi-user.target`, display stack off | `docs/DGX-OS-7.6-HEADLESS.md` |
 | Hardening | CVE sysctls + nftables LSRR/SSRR drop | `docs/HARDENING.md` |
 | Fabric (2+ nodes) | 200G ConnectX-7, twin IPs, MTU 9000, RDMA verified | `docs/QUAD-STACK.md` |
-| Node user | `gb10` (uid 1000), example name; use your own consistently | this file |
+| Node user | `gb10` (uid 1000) in the examples; use your own name consistently | this file |
 
 **Don't update to the latest kernel yet:** the standard stays pinned
 to `6.17.0-1032-nvidia` because the newest kernels are known-bad:
@@ -159,7 +159,6 @@ gb10-ops/
 
 ## Attribution
 
-- **<owner>**: Original research, testing methodology
 - **agjs/gb10-clock-cap**: Benchmark rigor, soak testing methodology
 - **hoesing/spark-gpu-throttle-check**: Power-delivery diagnostic
 - **christopherowen/dgx-spark-fan-control**: Pre-cooling concept
