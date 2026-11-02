@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fan pre-cooling for GB10 — OPTIONAL, not part of the gb10-ops standard.
+# Fan pre-cooling for GB10: OPTIONAL, not part of the gb10-ops standard.
 # Boost fans BEFORE heavy workloads, not after temps rise.
 # The standard story is stock EC thermal behavior + the 2200 MHz cap.
 #

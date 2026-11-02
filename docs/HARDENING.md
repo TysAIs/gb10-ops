@@ -2,15 +2,20 @@
 
 Apply identically on every GB10 node. Verify after each step.
 
-## Kernel: pin 6.17.0-1032-nvidia on ALL nodes
+## Kernel: don't update to the latest kernel yet
+
+The standard kernel is `6.17.0-1032-nvidia`, pinned on ALL nodes.
+The newest kernels are known-bad:
 
 - Do **NOT** take `7.0.0-1019` (DGX OS 7.6): NCCL/RoCE regression
   (`ibv_reg_mr_iova2` ENOMEM, GPU work 1.5–2.4x slower). Do **NOT**
   take `7.0.0-1024`: idle resets, freezes, and bootloops reported.
+- The hold lifts when a newer kernel proves stable (no crash loop,
+  no NCCL/RoCE regression). Until then, stay pinned.
 - **All nodes in a cluster run the same kernel.** Mixed kernels taint
   any NCCL/RoCE measurement.
-- Never install `doca-ofed` or the dkms MFT package (`kernel-mft-dkms`)
-  — it shadows the inbox mlx5 driver and breaks the ConnectX-7.
+- Never install `doca-ofed` or the dkms MFT package (`kernel-mft-dkms`):
+  it shadows the inbox mlx5 driver and breaks the ConnectX-7.
 - Pin it:
 
 ```bash
@@ -26,8 +31,8 @@ proven; test-boot with `grub-reboot` before changing the default.
 
 ## CVE-2026-98432 mitigations
 
-CVE-2026-98432 (IPv4 TCP) is **unpatched on every GB10 kernel** — the
-6.17 line is EOL — so configuration mitigation is the answer, applied
+CVE-2026-98432 (IPv4 TCP) is **unpatched on every GB10 kernel**. The
+6.17 line is EOL, so configuration mitigation is the answer, applied
 identically on any kernel. Nodes are LAN/tailnet-only (not
 internet-exposed): this is cheap insurance, not an emergency. The
 sysctls also close a public Ubuntu 24.04 root LPE
@@ -41,7 +46,7 @@ user.max_user_namespaces=0
 net.mptcp.enabled=0
 ```
 
-`/etc/nftables.d/gb10filter.nft` — drops TCP packets carrying LSRR/SSRR
+`/etc/nftables.d/gb10filter.nft`: drops TCP packets carrying LSRR/SSRR
 IP options (the vulnerable path):
 
 ```

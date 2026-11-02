@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GB10 clock-cap sweep — research tool, NOT the standard.
+# GB10 clock-cap sweep: research tool, NOT the standard.
 # The standard is 2200 MHz (deploy/apply-2200.sh). This sweep measures
 # other caps for comparison and always restores 2200 MHz on exit.
 # Uses llama-benchy (the correct tool): pp=2048, tg=128, 3 runs per cap.

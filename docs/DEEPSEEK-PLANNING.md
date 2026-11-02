@@ -1,10 +1,10 @@
-# Serving-recipe notes — DeepSeek (example, not the standard)
+# Serving-recipe notes: DeepSeek (example, not the standard)
 
 Serving recipes are **not** part of the gb10-ops setup standard: any
 recipe works on a node once the standard (caps, pinned kernel,
 headless, hardening, fabric) is applied and verified. These notes
 record one worked example so the sizing mistakes aren't repeated.
-Check numbers against the recipe checkout you actually use — recipe
+Check numbers against the recipe checkout you actually use: recipe
 READMEs and their config files have disagreed before; trust the
 checkout.
 
@@ -19,12 +19,12 @@ Two distinct shapes exist; do not mix their instructions:
   unquantized; the EXL3 pack is what makes TP=2 fit.
 - **4-node TensorFold recipe**: runs one instance across 4 nodes. This
   is the shape a 4-node fleet used live (Nov 2, 2026, as a worked
-  example — endpoint, context, and stream settings are fleet choices,
+  example; endpoint, context, and stream settings are fleet choices,
   not standard).
 
 Lane overlays (e.g. ABLIT) are recipe-specific options with their own
 gated downloads and sidecar files: enable one only as a whole lane,
-per that recipe's checkout — don't combine numbers from different
+per that recipe's checkout. Don't combine numbers from different
 lanes.
 
 ## Serving gotcha: Hugging Face cache on NFS

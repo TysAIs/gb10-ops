@@ -1,7 +1,7 @@
-# GitHub description — final text (APPLIED 2026-11-02)
+# GitHub description: final text (APPLIED 2026-11-02)
 
 Status: applied to the repository on 2026-11-02, and reworded the
-same day to be device-agnostic — this standard is for every GB10
+same day to be device-agnostic. This standard is for every GB10
 device, so the description names no brands or models. This file
 remains as the record of the exact text; if the description ever
 needs changing, edit it here first, then re-apply.

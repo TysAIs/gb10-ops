@@ -2,7 +2,7 @@
 
 ## Summary
 
-Certain GB10 units hard power-off under sustained GPU load — no
+Certain GB10 units hard power-off under sustained GPU load, with no
 warning, no logs, no graceful shutdown. The box just dies.
 
 **It's not thermal.** Crashes happen at 79–82°C / ~88–92W, well below
@@ -12,7 +12,7 @@ the 95°C thermal trip point. This is a power-delivery defect.
 
 - Acknowledged: July 27, 2026
 - No fix shipped as of Oct 2026
-- "This behavior only occurs in certain units" — RMA recommended
+- "This behavior only occurs in certain units." RMA recommended
 - RMA path functional; 2 of 6 documented cases resolved by replacement
 
 ## Why the clock cap works
@@ -43,7 +43,7 @@ Measured Oct 16, 2026 on healthy units via llama-benchy and cuBLAS GEMM.
 
 - A hard power-off needs **AC unplugged for 30–60 seconds**; a reboot
   does not fix it.
-- **Wake-on-LAN does not reliably wake GB10 nodes** — the EC cuts NIC
+- **Wake-on-LAN does not reliably wake GB10 nodes**: the EC cuts NIC
   standby power in S5 (proven on fleet hardware).
 - Real remote recovery: UEFI *After Power Loss → Auto Boot* plus a
   switched PDU / smart plug, so a dead node can be power-cycled and
