@@ -1,104 +1,85 @@
 # gb10-ops
 
-> **The DGX Spark (GB10) operations toolkit.** Tested clock caps, power-delivery
-> research, deployment automation, and benchmarking methodology. Built from real
-> measurements on real hardware.
+> **The GB10 setup standard** — any GB10 device (DGX Spark, Acer
+> Veriton GN100, others), any node count. Measured on real hardware;
+> written so a human — or an AI agent — can apply and verify it.
 
-## The Standard: 2200 MHz
+## The standard
 
-**Apply to all Sparks:**
-```bash
-./deploy/apply-2200.sh
-```
+| Area | Standard | Where |
+|---|---|---|
+| GPU clock cap | **2200 MHz**, persisted by `gb10-clock-cap.service` | `deploy/apply-2200.sh` |
+| CPU clock cap | **2808 MHz** (X925 capped to the A725 ceiling), persisted by `gb10-cpu-cap.service` | `deploy/apply-2808.sh`, `docs/CPU-TUNING.md` |
+| Kernel | **Pinned `6.17.0-1032-nvidia`** with apt-mark holds, same kernel on every node | `docs/HARDENING.md` |
+| Headless | `multi-user.target`, display stack off | `docs/DGX-OS-7.6-HEADLESS.md` |
+| Hardening | CVE sysctls + nftables LSRR/SSRR drop | `docs/HARDENING.md` |
+| Fabric (2+ nodes) | 200G ConnectX-7, twin IPs, MTU 9000, RDMA verified | `docs/QUAD-STACK.md` |
+| Node user | `gb10` (uid 1000) — example name; use your own consistently | — |
 
-### Why 2200?
+**Never:** upgrade to DGX OS 7.6 kernel `7.0.0-1019` (NCCL/RoCE ENOMEM
+regression, GPU work 1.5–2.4x slower) or `7.0.0-1024` (idle resets /
+bootloops); install `doca-ofed` or the dkms MFT package (breaks the
+ConnectX-7). Details in `docs/HARDENING.md`.
 
-| Cap | Prefill | Power (inference) | Power (stress) | Margin to 88W defect |
-|-----|---------|-------------------|----------------|---------------------|
-| 2000 | 2,880 tok/s | 21W | ~40W (est) | 48W |
-| 2100 | 2,905 tok/s | 24W | ~45W (est) | 43W |
-| **2200** | **3,009 tok/s** | **27W** | **~50W (est)** | **38W** |
+### Why 2200 MHz GPU?
 
-2200 MHz is the original tested standard. Safe, stable, and proven across
-multiple units. Verification runs confirmed no meaningful performance difference
-vs higher caps (within noise), so 2200 remains the recommended setting.
+GB10 units can hard power-off at ~88W GPU draw — a power-delivery defect
+NVIDIA acknowledged in July 2026 (see `docs/POWER-DELIVERY.md`). The cap
+keeps power well clear of it:
 
-**Key findings (Oct 16, 2026, measured on 2x DGX Spark):**
-- 2200 MHz keeps power well under the 88W defect threshold
-- 38W safety margin to the power-delivery defect zone
-- Uncapped survives on healthy units (87W) but with zero margin — not recommended
-- Decode is memory-bound (~73 tok/s), flat across caps
-- All caps 2000-2200 are safe; 2200 is the best balance of performance and safety
+| Cap | Prefill | Power (inference) | Margin to 88W defect |
+|---|---|---|---|
+| 2000 | 2,880 tok/s | 21W | 48W |
+| 2100 | 2,905 tok/s | 24W | 43W |
+| **2200** | **3,009 tok/s** | **27W** | **38W** |
 
-## DGX OS 7.6 and Headless Mode
+Measured Oct 16, 2026. Decode is memory-bound (~73 tok/s), flat across
+caps; higher caps showed no meaningful gain, so 2200 is the standard.
 
-DGX OS 7.6.0 adds Dynamic Display Reserved Memory: a UEFI option that
-shrinks the display carveout to 512 MB minimum when no display is
-connected, roughly 2-4 GB back versus a loaded desktop. It needs EC 3.13.7
-+ SoC firmware, and it is a per-node UEFI setting, not an SSH command.
-See `docs/DGX-OS-7.6-HEADLESS.md`. The 2200 MHz clock cap still applies
-on headless nodes.
+### Why 2808 MHz CPU?
 
-## Quad Stack (2x Spark + 2x Veriton GN100 + MikroTik CRS812)
+A/B v2 against a live serving stack (44 paired ABBA runs): ≤0.24%
+serving cost — within noise — and ~15°C cooler on all-core CPU load.
+Evidence: `docs/CPU-TUNING.md`.
 
-Quad-stack setup, MikroTik firmware/link audit, Acer visibility rules,
-and node2 FE recovery are in `docs/QUAD-STACK.md`. Status Oct 29, 2026:
-not online yet — do not claim it until all 4 nodes pass verification.
+## First-boot checklist (per node)
 
-## DeepSeek Planning
-
-Mia AI lab DeepSeek V4.1 Flash planning is in
-`docs/DEEPSEEK-PLANNING.md`, gated on quad verification. It is a 2-Spark
-recipe, not a 4-node recipe — the quad decision comes after verification.
-
-## The Power-Delivery Defect
-
-GB10 units can hard power-off (no logs, instant death) at ~88W GPU draw.
-NVIDIA acknowledged July 2026. It's **power-delivery, not thermal** — crashes
-at 79-82°C, below the 95°C trip point.
-
-The clock cap prevents this by keeping power below the danger zone.
-See `docs/POWER-DELIVERY.md` for full research.
-
-## Repository Structure
-
-```
-gb10-ops/
-├── README.md              # This file — 2200 MHz standard
-├── deploy/
-│   └── apply-2200.sh      # One-command deployment to all Sparks
-├── docs/
-│   ├── POWER-DELIVERY.md  # Defect research, test results, methodology
-│   ├── DGX-OS-7.6-HEADLESS.md  # DGX OS 7.6, Dynamic Display Reserved Memory
-│   ├── QUAD-STACK.md      # 2x Spark + 2x Veriton GN100 + MikroTik CRS812
-│   └── DEEPSEEK-PLANNING.md   # Mia 2-Spark recipe, gated on verification
-├── fan-control/
-│   └── precool.sh         # Optional fan pre-cooling (requires Owen's tool)
-└── tests/
-    └── proper-sweep.sh    # llama-benchy clock-cap sweep script
-```
+1. Create user `gb10` (uid 1000) or your equivalent; confirm SSH in.
+2. **PD-controller firmware check:** `fwupdmgr get-devices` — the USB PD
+   device must not sit at factory stub `0x00000001` (a silent fwupd
+   failure can leave it there; re-running `fwupdmgr update` fixed one
+   unit to `0x00000519`). Verify the version actually changed.
+3. Confirm kernel is `6.17.0-1032-nvidia` (`uname -r`); apply the pin
+   and holds in `docs/HARDENING.md`.
+4. Apply both clock caps (below) and verify under load.
+5. Go headless and apply hardening (`docs/HARDENING.md`).
+6. Optional, console only: UEFI *Display Reserved Memory* → Auto
+   reclaims ~1.5 GB on headless nodes, and *After Power Loss → Auto
+   Boot* enables real remote recovery (see Power / recovery).
+7. Clustering? Continue with `docs/QUAD-STACK.md`.
 
 ## Deployment
 
-**Quick (auto-discover Sparks on LAN):**
 ```bash
-./deploy/apply-2200.sh
+./deploy/apply-2200.sh gb10@node1 gb10@node2   # GPU cap; no args = auto-discover
+./deploy/apply-2808.sh gb10@node1 gb10@node2   # CPU cap
+./deploy/apply-2200.sh --uninstall gb10@node1  # remove GPU cap
 ```
 
-**Manual (specific hosts):**
-```bash
-./deploy/apply-2200.sh gb10@192.0.2.4 gb10@192.0.2.23
-```
+Example hostnames/IPs are examples — substitute your own. The scripts
+set the cap immediately, install the persistence service, and verify
+per host. Note: `clocks.max` can still read 3003 under a lock on GB10 —
+verify under load (BF16 GEMM pins SM at ~2190 MHz).
 
-**What it does:**
-1. Sets `nvidia-smi -lgc 0,2200` immediately
-2. Installs systemd service for persistence across reboots
-3. Verifies on each host
+## Power / recovery
 
-**Remove:**
-```bash
-./deploy/apply-2200.sh --uninstall
-```
+- **Never test uncapped** without physical access. Hard power-off needs
+  AC unplugged 30–60s; a reboot does not fix it.
+- **Wake-on-LAN does not reliably wake GB10 nodes** — the EC cuts NIC
+  standby power in S5. Real remote recovery = UEFI *After Power Loss →
+  Auto Boot* + a switched PDU / smart plug.
+- Apply caps on **every** node in a multi-node setup; mismatched caps
+  cause issues. Abort stress tests if power >75W or SoC >92°C.
 
 ## Benchmarking
 
@@ -106,58 +87,67 @@ Use `llama-benchy` (not curl loops, not wall-clock division):
 
 ```bash
 uvx llama-benchy \
-  --base-url http://192.0.2.4:8000/v1 \
-  --model Qwen/Qwen3.8-Flash-Next-Uncensored \
-  --served-model-name Qwen/Qwen3.8-Flash-Next-Uncensored \
-  --pp 2048 --tg 128 --exact-tg \
-  --runs 3 --latency-mode generation
+  --base-url http://<node>:<port>/v1 \
+  --model <model> --served-model-name <model> \
+  --pp 2048 --tg 128 --exact-tg --runs 3 --latency-mode generation
 ```
 
-**Metrics that matter:**
-- `tg` tok/s: Decode speed (memory-bound, should be flat across caps)
-- `pp` tok/s: Prefill speed (compute-bound, scales with clock)
-- `e2e_ttft`: Time to first content token (user-facing latency)
-
-See `tests/proper-sweep.sh` for the full sweep script.
-
-## Stress Testing
-
-Verify power delivery health with dense GEMM:
+Metrics: `tg` tok/s (decode, flat across caps), `pp` tok/s (prefill,
+scales with clock), `e2e_ttft` to first **content** token. See
+`tests/proper-sweep.sh` for a cap sweep. Stress-test power delivery:
 
 ```bash
-# On the Spark:
 git clone --depth 1 https://github.com/hoesing/spark-gpu-throttle-check
-python3 spark-gpu-throttle-check.py -n 60
+python3 spark-gpu-throttle-check.py -n 60   # on the node
 ```
 
-**PASS criteria:** Clocks stay above 1400 MHz, power below 75W with cap in place.
+**PASS:** clocks stay above 1400 MHz, power below 75W with cap in place.
 
-**Our results (2200 MHz cap):** 58W avg, 2281 MHz peak, PASS.
+## Serving note: Hugging Face cache on NFS
 
-## Fan Control (Optional)
+`huggingface_hub` 1.27 stores its token inside `~/.cache/huggingface`
+and hardens that directory to mode 700 — which breaks NFS-exported
+cache reads under `root_squash`. Keep credentials out of NFS-exported
+trees and keep the exported cache directory traversable (755).
 
-Owen's `dgx-spark-fan-control` enables pre-cooling: boost fans before heavy
-jobs, return to automatic after. Useful for thermal headroom, not required
-for the 2200 MHz standard.
+## Fan control (optional, not the standard)
 
-```bash
-# Install (see Owen's repo for full instructions):
-# https://github.com/christopherowen/dgx-spark-fan-control
+Stock EC thermal behavior with the 2200 MHz cap is the standard story.
+Fan tools are documented-optional only — none is a default step:
 
-# Pre-cool before a heavy job:
-./fan-control/precool.sh 8 120
+- Owen's `dgx-spark-fan-control` (used by `fan-control/precool.sh`):
+  validated on EC 3.5.8, **untested on EC 3.13.7**.
+- Secure Boot is enabled: any kernel-module fan tool needs a MOK key
+  enrolled via a console reboot.
+- WeilJimmer's thermald/`nvfancontrol` stack is reported unsupported on
+  EC 3.13.7. mathieu-lacage's fan-override module can clamp fan state
+  across reboots (risk); its protocol docs are the ecosystem reference.
+
+## Repository structure
+
 ```
-
-## Safety
-
-- **Never test uncapped** unless you can physically access the box. Hard
-  power-off requires AC unplug for 30-60s to recover. Reboot does NOT fix it.
-- **Always set caps on both Sparks** in TP2 setups. Mismatched caps cause issues.
-- **Monitor during stress tests.** Abort if power >75W or SoC >92°C.
+gb10-ops/
+├── README.md                  # This file — the standard
+├── DESCRIPTION-CHANGE.md      # GitHub repo description (final text)
+├── deploy/
+│   ├── apply-2200.sh          # GPU cap → gb10-clock-cap.service
+│   └── apply-2808.sh          # CPU cap → gb10-cpu-cap.service
+├── docs/
+│   ├── CPU-TUNING.md          # CPU cap evidence (A/B v2 + burn test)
+│   ├── POWER-DELIVERY.md      # Defect research and methodology
+│   ├── HARDENING.md           # Kernel pin + CVE mitigations
+│   ├── DGX-OS-7.6-HEADLESS.md # Headless standard; why not the 7.6 kernel
+│   ├── QUAD-STACK.md          # N-node 200G fabric (any node count)
+│   └── DEEPSEEK-PLANNING.md   # Serving-recipe notes (not the standard)
+├── fan-control/
+│   └── precool.sh             # Optional pre-cooling (Owen's tool)
+└── tests/
+    └── proper-sweep.sh        # llama-benchy clock-cap sweep
+```
 
 ## Attribution
 
-- **<owner>**: Original research, testing methodology, "CPU is the thermal limiter"
+- **<owner>**: Original research, testing methodology
 - **agjs/gb10-clock-cap**: Benchmark rigor, soak testing methodology
 - **hoesing/spark-gpu-throttle-check**: Power-delivery diagnostic
 - **christopherowen/dgx-spark-fan-control**: Pre-cooling concept

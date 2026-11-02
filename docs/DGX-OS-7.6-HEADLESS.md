@@ -1,40 +1,60 @@
-# DGX OS 7.6.0 and Headless Mode (Oct 2026)
+# Headless GB10 — and why not the DGX OS 7.6 kernel
 
-## Current known-good baseline
-- DGX OS **7.6.0**, kernel 7.0.0-1019, UEFI 1.111.17, EC **3.13.7**,
-  SoC **2.158.15**, USB PD 0.5.25 (Founders Edition only; partner systems may lag).
-- Serving pair caution (Oct 2026): the 7.0 kernel line was previously flagged
-  for NCCL/memory regressions on the serving pair. Do not move a working
-  serving node off its known-good kernel (6.17.0-1032-nvidia) without an
-  explicit decision per node. Kernel choice is per-node, not repo-wide.
+## The headless standard
 
-## Dynamic Display Reserved Memory — the headless RAM reclaim
-DGX OS 7.6 (October 2026) adds **Dynamic Display Reserved Memory**, a UEFI
-option that automatically shrinks the display carveout to its **512 MB
-minimum when no display is connected**.
-- This is the headless RAM reclaim: roughly **2-4 GB back** versus a loaded
-  desktop, depending on the prior carveout.
-- It is a **UEFI setting, not an SSH command** — it must be set per node in
-  BIOS/UEFI, with no display attached to get the minimum carveout.
-- Prerequisite for the related headless fan fix: EC 3.13.7 + SoC 2.158.15
-  via `fwupdmgr`. Being on DGX OS 7.6.0 alone does not install that firmware.
-- Verify after: check available system memory before/after, and confirm
-  the display carveout in UEFI. Do not claim a fixed GB number for a node
-  you have not measured.
-
-## EC / firmware update path (per node)
 ```bash
-# On the Spark, check staged/available firmware first
-fwupdmgr get-updates
-fwupdmgr update   # stages EC update; a reboot activates it
+sudo systemctl set-default multi-user.target
+sudo systemctl disable --now gdm3   # or your display manager
 ```
-- **Do not reboot a serving node without explicit approval.** A staged
-  update (Update State: Needs reboot) is not an applied update.
-- October headless-fan fix: EC 3.13.7 fixes fans stopping in
-  headless/appliance mode, paired with SoC 2.158.15.
 
-## Clock cap still applies
-Headless mode does not replace the clock cap. Apply **2200 MHz**
-(`./deploy/apply-2200.sh`) on every Spark, headless or not, and verify
-with the `nvidia-smi -lgc 0,2200` result — not with Applications Clocks
-alone, which can still show a 2418 MHz default on GB10.
+Verify: `systemctl get-default` → `multi-user.target`, and no display
+manager running after reboot.
+
+**OS-level headless reclaims ZERO reserved RAM** — measured. Turning
+off the display stack stops the desktop using RAM, but the display
+carveout stays reserved until UEFI changes it.
+
+## The real reclaim: UEFI Display Reserved Memory (optional)
+
+Console/UEFI setup only (Esc/Del at boot) — not an SSH command:
+
+- *Display Reserved Memory* defaults to **2 GB**.
+- Set it to **Auto**: with no display attached it drops to **0.5 GB** —
+  roughly **1.5 GB back** per headless node.
+- Verify by comparing available system memory before/after on that
+  node; don't claim a fixed number for a node you haven't measured.
+
+## Do NOT take DGX OS 7.6 for this
+
+DGX OS 7.6 ships kernel `7.0.0-1019`, which is **forbidden** in this
+standard: NCCL/RoCE regression (`ibv_reg_mr_iova2` ENOMEM, GPU work
+1.5–2.4x slower). Kernel `7.0.0-1024` is also forbidden (idle resets /
+bootloops). The standard kernel is pinned `6.17.0-1032-nvidia` on
+every node — see `docs/HARDENING.md`.
+
+7.6's *Dynamic* Display Reserved Memory (automatic carveout shrink)
+ships with that forbidden 7.6/1019 kernel. You don't need it: the
+manual UEFI setting above gets the reclaim on the pinned kernel.
+
+## Firmware (per node)
+
+```bash
+fwupdmgr get-updates
+fwupdmgr update   # stages updates; a reboot activates them
+```
+
+- EC **3.13.7** fixes fans stopping in headless/appliance mode. A
+  staged update ("Needs reboot") is not an applied update — verify
+  versions with `fwupdmgr get-devices` after rebooting.
+- **Do not reboot a serving node without explicit approval.**
+- PD-controller check: the USB PD device must not sit at factory stub
+  `0x00000001`. A silent fwupd failure can leave it there; re-running
+  `fwupdmgr update` fixed one fleet unit to `0x00000519`. Always
+  confirm the version actually changed.
+
+## Clock caps still apply
+
+Headless changes nothing about caps: GPU 2200 MHz
+(`deploy/apply-2200.sh`) and CPU 2808 MHz (`deploy/apply-2808.sh`) on
+every node, headless or not. Verify the GPU lock under load — GB10
+clock reporting can still show defaults while the lock is in effect.
