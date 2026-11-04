@@ -22,15 +22,71 @@ The newest kernels are known-bad:
 uname -r   # expect 6.17.0-1032-nvidia
 sudo apt-mark hold linux-image-6.17.0-1032-nvidia \
   linux-headers-6.17.0-1032-nvidia linux-modules-nvidia-580-open-6.17.0-1032-nvidia
-# In /etc/default/grub, set GRUB_DEFAULT to the 1032 entry (exact
-# string from the reference fleet; confirm yours with
-# `grep "6.17.0-1032" /boot/grub/grub.cfg | grep -m1 menuentry`):
-#   GRUB_DEFAULT="Advanced options for DGX OS GNU/Linux>DGX OS GNU/Linux, with Linux 6.17.0-1032-nvidia"
-sudo update-grub
+# Boot default: the explicit 1032 entry, never "saved". Do not hand-edit;
+# the script writes /etc/default/grub and regenerates grub.cfg safely.
+bash deploy/apply-grub-default.sh <node1> [<node2> ...]
 ```
 
 Keep a newer kernel installed as a GRUB fallback until the node is
 proven; test-boot with `grub-reboot` before changing the default.
+
+## Boot default: an explicit entry, never `saved`
+
+`GRUB_DEFAULT` must name the target kernel entry explicitly on every
+node:
+
+```
+GRUB_DEFAULT="Advanced options for DGX OS GNU/Linux>DGX OS GNU/Linux, with Linux 6.17.0-1032-nvidia"
+```
+
+Never leave `GRUB_DEFAULT=saved`. With `saved`, the real boot target
+lives in `/boot/grub/grubenv` (`saved_entry=`), so one `grub-set-default`,
+one `grub-reboot`, or one maintainer script changes which kernel a node
+boots while `/etc/default/grub` still looks correct. An explicit string
+is declarative: it is greppable, diffable across the fleet, and it
+cannot drift behind your back. `GRUB_SAVEDEFAULT` should likewise stay
+unset.
+
+Apply and verify with the deploy script (idempotent, config-only, no
+reboot; `--check` is read-only and needs no privilege):
+
+```bash
+bash deploy/apply-grub-default.sh --check node1 node2   # expect "verdict ALIGNED"
+bash deploy/apply-grub-default.sh node1 node2           # writes /etc/default/grub, regenerates grub.cfg
+```
+
+It refuses to touch anything unless the target kernel image is present,
+the generated menu really contains that entry, and `grub-script-check`
+accepts the result. It regenerates into a root-owned temp file and only
+then installs it, so a failed `grub-mkconfig` can never leave a
+truncated `grub.cfg` on a node whose `GRUB_TIMEOUT=0` gives you no menu
+to recover from. The new default takes effect at the next natural boot,
+so serving is never interrupted by the change.
+
+Verification is two reads, and the second is the one people skip:
+
+```bash
+grep GRUB_DEFAULT /etc/default/grub
+sudo grep -E '^\s*set default=' /boot/grub/grub.cfg | grep -v next_entry
+```
+
+The `grep -v next_entry` matters: `grub.cfg` also contains
+`set default="${next_entry}"` for the one-shot `grub-reboot` override.
+That is not the persistent default, and reading it as one makes a
+correct node look wrong.
+
+Two traps cost real time here:
+
+- `fs.protected_regular` (set by default) stops root from
+  O_CREAT-truncating a file another user created in a sticky `/tmp`, so
+  `sudo grub-mkconfig -o /tmp/x` dies with `cannot create /tmp/x:
+  Permission denied` even though it is running as root. Create the temp
+  file as root, or keep it outside `/tmp`.
+- `sudo` is passwordless on some nodes and not on others. A non-root
+  `--check` still proves the `/etc/default/grub` half; cross-checking
+  `grub.cfg` (mode 600 root) needs privilege. Report which half you
+  actually read instead of implying both.
+
 
 ## CVE-2026-98432 mitigations (the makeshift protections)
 

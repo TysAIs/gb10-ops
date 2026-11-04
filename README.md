@@ -13,6 +13,7 @@
 | GPU clock cap | **2200 MHz**, persisted by `gb10-clock-cap.service` | `deploy/apply-2200.sh` |
 | CPU clock cap | **2808 MHz** (X925 capped to the A725 ceiling), persisted by `gb10-cpu-cap.service` | `deploy/apply-2808.sh`, `docs/CPU-TUNING.md` |
 | Kernel | **Pinned `6.17.0-1032-nvidia`** with apt-mark holds; don't update to the latest kernel yet | `docs/HARDENING.md` |
+| Boot default | **Explicit `6.17.0-1032` GRUB entry**, never `GRUB_DEFAULT=saved`; no reboot required | `deploy/apply-grub-default.sh`, `docs/HARDENING.md` |
 | Headless | `multi-user.target`, display stack off | `docs/DGX-OS-7.6-HEADLESS.md` |
 | Hardening | CVE sysctls + nftables LSRR/SSRR drop | `docs/HARDENING.md` |
 | Fabric (2+ nodes) | 200G ConnectX-7, twin IPs, MTU 9000, RDMA verified | `docs/QUAD-STACK.md` |
@@ -71,6 +72,8 @@ Evidence: `docs/CPU-TUNING.md`.
 ```bash
 bash deploy/apply-2200.sh gb10@node1 gb10@node2   # GPU cap (SSH user@host); no args = auto-discover
 bash deploy/apply-2808.sh node1 node2         # CPU cap (Tailscale node names, reached as root)
+bash deploy/apply-grub-default.sh --check node1 node2   # boot-default drift report (read-only)
+bash deploy/apply-grub-default.sh node1 node2           # explicit 6.17.0-1032 GRUB default; no reboot
 bash deploy/apply-2200.sh --uninstall gb10@node1  # remove GPU cap
 ```
 
@@ -143,7 +146,8 @@ gb10-ops/
 │   └── gb10-headline.jpg      # README banner image
 ├── deploy/
 │   ├── apply-2200.sh          # GPU cap → gb10-clock-cap.service
-│   └── apply-2808.sh          # CPU cap → gb10-cpu-cap.service
+│   ├── apply-2808.sh          # CPU cap → gb10-cpu-cap.service
+│   └── apply-grub-default.sh  # explicit GRUB boot default, never "saved"
 ├── docs/
 │   ├── CPU-TUNING.md          # CPU cap evidence (A/B v2 + burn test)
 │   ├── POWER-DELIVERY.md      # Defect research and methodology
