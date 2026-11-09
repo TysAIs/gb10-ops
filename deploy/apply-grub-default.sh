@@ -29,7 +29,7 @@
 
 set -uo pipefail
 
-KERNEL="${KERNEL:-6.17.0-1032-nvidia}"
+KERNEL="${KERNEL:-7.0.0-1019-nvidia-64k}"
 SUBMENU="${SUBMENU:-Advanced options for DGX OS GNU/Linux}"
 ENTRY_PREFIX="${ENTRY_PREFIX:-DGX OS GNU/Linux, with Linux}"
 WANT="${SUBMENU}>${ENTRY_PREFIX} ${KERNEL}"
