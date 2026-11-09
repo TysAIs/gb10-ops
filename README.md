@@ -12,19 +12,24 @@
 |---|---|---|
 | GPU clock cap | **2200 MHz**, persisted by `gb10-clock-cap.service` | `deploy/apply-2200.sh` |
 | CPU clock cap | **2808 MHz** (X925 capped to the A725 ceiling), persisted by `gb10-cpu-cap.service` | `deploy/apply-2808.sh`, `docs/CPU-TUNING.md` |
-| Kernel | **Pinned `6.17.0-1032-nvidia`** with apt-mark holds; don't update to the latest kernel yet | `docs/HARDENING.md` |
-| Boot default | **Explicit `6.17.0-1032` GRUB entry**, never `GRUB_DEFAULT=saved`; no reboot required | `deploy/apply-grub-default.sh`, `docs/HARDENING.md` |
+| Kernel | **Qualified `7.0.0-1019-nvidia-64k`** (64 KiB pages) on DGX OS 7.6, explicit GRUB pin; `6.17.0-1032-nvidia` kept installed as the known-good rollback | `docs/HARDENING.md` |
+| Boot default | **Explicit `7.0.0-1019-nvidia-64k` GRUB entry**, never `GRUB_DEFAULT=saved`; no reboot required | `deploy/apply-grub-default.sh`, `docs/HARDENING.md` |
 | Headless | `multi-user.target`, display stack off | `docs/DGX-OS-7.6-HEADLESS.md` |
 | Hardening | CVE sysctls + nftables LSRR/SSRR drop | `docs/HARDENING.md` |
 | Fabric (2+ nodes) | 200G ConnectX-7, twin IPs, MTU 9000, RDMA verified | `docs/QUAD-STACK.md` |
 | Node user | `gb10` (uid 1000) in the examples; use your own name consistently | this file |
 
-**Don't update to the latest kernel yet:** the standard stays pinned
-to `6.17.0-1032-nvidia` because the newest kernels are known-bad:
-DGX OS 7.6's `7.0.0-1019` (NCCL/RoCE ENOMEM regression, GPU work
-1.5–2.4x slower) and `7.0.0-1024` (idle resets / bootloops). Also
-never install `doca-ofed` or the dkms MFT package (breaks the
-ConnectX-7). Details in `docs/HARDENING.md`.
+**Kernel baseline (updated Nov 2026):** the standard kernel is
+`7.0.0-1019-nvidia-64k` on DGX OS 7.6, the qualified baseline for the
+current serving profile (64 KiB pages, `kho=off` as shipped by DGX OS
+packaging). `6.17.0-1032-nvidia` stays installed on every node as the
+known-good rollback. `7.0.0-1024` remains forbidden (idle resets /
+bootloops, no qualification). Earlier warnings about the stock
+`7.0.0-1019` 4 KiB kernel (NCCL/RoCE ENOMEM reports) are historical:
+the qualified path is the -64k variant, deployed and verified as a
+uniform set; never mix kernels across a cluster. Also never install
+`doca-ofed` or the dkms MFT package (breaks the ConnectX-7). Details
+in `docs/HARDENING.md`.
 
 ### Why 2200 MHz GPU?
 
@@ -58,8 +63,10 @@ Evidence: `docs/CPU-TUNING.md`.
    `fwupdmgr update` fixed one unit). Verify the version actually
    changed. Some GB10 devices expose no such entry to fwupd at all;
    then there is nothing to check.
-3. Confirm kernel is `6.17.0-1032-nvidia` (`uname -r`); apply the pin
-   and holds in `docs/HARDENING.md`.
+3. Install the qualified kernel set and confirm `uname -r` reads
+   `7.0.0-1019-nvidia-64k` with `getconf PAGESIZE` = 65536; apply the
+   GRUB pin in `docs/HARDENING.md`. Keep `6.17.0-1032-nvidia`
+   installed as the rollback.
 4. Apply both clock caps (below) and verify under load.
 5. Go headless and apply hardening (`docs/HARDENING.md`).
 6. Optional, console only: UEFI *Display Reserved Memory* → Auto
@@ -73,7 +80,7 @@ Evidence: `docs/CPU-TUNING.md`.
 bash deploy/apply-2200.sh gb10@node1 gb10@node2   # GPU cap (SSH user@host); no args = auto-discover
 bash deploy/apply-2808.sh node1 node2         # CPU cap (Tailscale node names, reached as root)
 bash deploy/apply-grub-default.sh --check node1 node2   # boot-default drift report (read-only)
-bash deploy/apply-grub-default.sh node1 node2           # explicit 6.17.0-1032 GRUB default; no reboot
+bash deploy/apply-grub-default.sh node1 node2           # explicit 7.0.0-1019-nvidia-64k GRUB default; no reboot
 bash deploy/apply-2200.sh --uninstall gb10@node1  # remove GPU cap
 ```
 
@@ -122,18 +129,40 @@ and hardens that directory to mode 700, which breaks NFS-exported
 cache reads under `root_squash`. Keep credentials out of NFS-exported
 trees and keep the exported cache directory traversable (755).
 
-## Fan control (optional, not the standard)
+## Thermals
 
-Stock EC thermal behavior with the 2200 MHz cap is the standard story.
-Fan tools are documented-optional only; none is a default step:
+Stock EC thermal behavior with the 2200 MHz cap is the standard
+story. There is no fan-control step in this standard, optional or
+otherwise: no fan tool is installed, documented, or required on a
+node that follows it. Temperature is watched, not managed: abort a
+benchmark if any node approaches 79 °C (the power-delivery defect
+threshold, see `docs/POWER-DELIVERY.md`).
 
-- Owen's `dgx-spark-fan-control` (used by `fan-control/precool.sh`):
-  validated on EC 3.5.8, **untested on EC 3.13.7**.
-- Secure Boot is enabled: any kernel-module fan tool needs a MOK key
-  enrolled via a console reboot.
-- WeilJimmer's thermald/`nvfancontrol` stack is reported unsupported on
-  EC 3.13.7. mathieu-lacage's fan-override module can clamp fan state
-  across reboots (risk); its protocol docs are the ecosystem reference.
+## Display driver modeset: off, via the OEM override package
+
+The OEM package `nvidia-drm-options-modeset0` installs
+`/etc/modprobe.d/zz-nvidia-drm-override.conf` with
+`options nvidia-drm modeset=0`. The `zz-` name sorts last, so it wins
+over the stock `nvidia-graphics-drivers-kms.conf` (`modeset=1`); the
+effective state is `/sys/module/nvidia_drm/parameters/modeset` = `N`
+on a headless node. This is the standing standard: **keep the
+package, do not purge it** — purging it without a replacement config
+lets the stock `modeset=1` take effect again. Serving profiles with
+`carveout=0` (e.g. tp4-switched, which inherits carveout=0) need no
+modeset purge at all; a purge is only a consideration for carveout
+profiles (TP3-class), which this standard does not run.
+
+## Serving profile notes: memory saver (site state)
+
+The current serving profile was qualified with a UVM leaf-packing
+memory saver active (`uvm_pack_sysmem_leaf_tables=Y`). DGX OS 7.6
+ships no OEM saver: the stock driver has no such parameter, so the
+only implementation is the recipe's own DKMS module
+(`dgx-spark-memory-saver`), signed with a locally generated MOK key
+and enrolled at a console reboot. Sites record their own state; on
+any cluster the state must be UNIFORM across nodes — a kernel/page/
+saver mismatch between nodes is an error state, while a uniform
+warning-level deviation is a documented site choice.
 
 ## Repository structure
 
@@ -151,12 +180,10 @@ gb10-ops/
 ├── docs/
 │   ├── CPU-TUNING.md          # CPU cap evidence (A/B v2 + burn test)
 │   ├── POWER-DELIVERY.md      # Defect research and methodology
-│   ├── HARDENING.md           # Kernel pin + CVE mitigations
-│   ├── DGX-OS-7.6-HEADLESS.md # Headless standard; why not to update the kernel yet
+│   ├── HARDENING.md           # Kernel baseline + CVE mitigations
+│   ├── DGX-OS-7.6-HEADLESS.md # Headless standard + DGX OS 7.6 kernel baseline
 │   ├── QUAD-STACK.md          # N-node 200G fabric (any node count)
 │   └── DEEPSEEK-PLANNING.md   # Serving-recipe notes (not the standard)
-├── fan-control/
-│   └── precool.sh             # Optional pre-cooling (Owen's tool)
 └── tests/
     └── proper-sweep.sh        # llama-benchy clock-cap sweep
 ```
@@ -165,8 +192,6 @@ gb10-ops/
 
 - **agjs/gb10-clock-cap**: Benchmark rigor, soak testing methodology
 - **hoesing/spark-gpu-throttle-check**: Power-delivery diagnostic
-- **christopherowen/dgx-spark-fan-control**: Pre-cooling concept
-- **mathieu-lacage/dgx-spark-fan-override**: EC protocol docs
 - **miaai-lab/sparkLimiter**: Deployment pattern
 - **eugr/llama-benchy**: Benchmarking tool
 

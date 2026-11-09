@@ -2,33 +2,63 @@
 
 Apply identically on every GB10 node. Verify after each step.
 
-## Kernel: don't update to the latest kernel yet
+## Kernel: the 7.0.0-1019-nvidia-64k qualified baseline (Nov 2026)
 
-The standard kernel is `6.17.0-1032-nvidia`, pinned on ALL nodes.
-The newest kernels are known-bad:
+The standard kernel is `7.0.0-1019-nvidia-64k` on DGX OS 7.6, on ALL
+nodes: 64 KiB pages (`getconf PAGESIZE` = 65536), driver 580.178.04,
+`kho=off` on the command line as shipped by DGX OS packaging. This is
+the qualified baseline for the current serving profile: it was
+deployed as a uniform set and verified per node (kernel, page size,
+swap, caps, fabric) in Nov 2026.
 
-- Do **NOT** take `7.0.0-1019` (DGX OS 7.6): NCCL/RoCE regression
-  (`ibv_reg_mr_iova2` ENOMEM, GPU work 1.5–2.4x slower). Do **NOT**
-  take `7.0.0-1024`: idle resets, freezes, and bootloops reported.
-- The hold lifts when a newer kernel proves stable (no crash loop,
-  no NCCL/RoCE regression). Until then, stay pinned.
-- **All nodes in a cluster run the same kernel.** Mixed kernels taint
-  any NCCL/RoCE measurement.
+- `6.17.0-1032-nvidia` stays installed on every node as the
+  known-good rollback. Kernel rollback = re-pin the GRUB default to
+  its explicit entry and reboot; nothing else changes.
+- Do **NOT** take `7.0.0-1024`: idle resets, freezes, and bootloops
+  reported, and it carries no qualification. Never boot it.
+- Historical note: the stock `7.0.0-1019` 4 KiB kernel carried
+  NCCL/RoCE regression reports (`ibv_reg_mr_iova2` ENOMEM) in Sep
+  2026, which is why this standard pinned 6.17 through Oct 2026. The
+  qualified path is the -64k variant; the pin lifted only for it,
+  only as a uniform deployment.
+- **All nodes in a cluster run the same kernel, page size, and
+  memory-saver state.** A cross-node mismatch is an error state.
 - Never install `doca-ofed` or the dkms MFT package (`kernel-mft-dkms`):
   it shadows the inbox mlx5 driver and breaks the ConnectX-7.
-- Pin it:
+- Install the qualified set (exact pinned packages) and pin the boot
+  default explicitly:
 
 ```bash
-uname -r   # expect 6.17.0-1032-nvidia
-sudo apt-mark hold linux-image-6.17.0-1032-nvidia \
-  linux-headers-6.17.0-1032-nvidia linux-modules-nvidia-580-open-6.17.0-1032-nvidia
-# Boot default: the explicit 1032 entry, never "saved". Do not hand-edit;
+uname -r        # expect 7.0.0-1019-nvidia-64k
+getconf PAGESIZE  # expect 65536
+# Boot default: the explicit -64k entry, never "saved". Do not hand-edit;
 # the script writes /etc/default/grub and regenerates grub.cfg safely.
 bash deploy/apply-grub-default.sh <node1> [<node2> ...]
 ```
 
-Keep a newer kernel installed as a GRUB fallback until the node is
-proven; test-boot with `grub-reboot` before changing the default.
+(The old apt-mark holds on the 6.17.0-1032 packages are obsolete as a
+policy: 1032 is retained as an installed fallback, not defended
+against updates.)
+
+## Memory saver state
+
+The serving profile's qualified baseline includes a UVM leaf-packing
+memory saver (`uvm_pack_sysmem_leaf_tables=Y`). DGX OS 7.6 ships no
+OEM saver — the stock 580 driver's UVM has no such parameter — so the
+implementation is the serving recipe's own DKMS module
+(`dgx-spark-memory-saver`), signed with a locally generated MOK key
+(a node's own key, generated on that node) and enrolled at a console
+reboot. Enrollment is a physical console step by design; there is no
+SSH path and none should be improvised. Whatever state a site runs,
+it must be identical on every node.
+
+## Display modeset
+
+Modeset stays OFF via the OEM override package
+`nvidia-drm-options-modeset0` (`options nvidia-drm modeset=0` in
+`/etc/modprobe.d/zz-nvidia-drm-override.conf`, which sorts after and
+overrides the stock `modeset=1`). Keep the package; do not purge it.
+See README "Display driver modeset".
 
 ## Boot default: an explicit entry, never `saved`
 
@@ -36,7 +66,7 @@ proven; test-boot with `grub-reboot` before changing the default.
 node:
 
 ```
-GRUB_DEFAULT="Advanced options for DGX OS GNU/Linux>DGX OS GNU/Linux, with Linux 6.17.0-1032-nvidia"
+GRUB_DEFAULT="Advanced options for DGX OS GNU/Linux>DGX OS GNU/Linux, with Linux 7.0.0-1019-nvidia-64k"
 ```
 
 Never leave `GRUB_DEFAULT=saved`. With `saved`, the real boot target
@@ -176,3 +206,5 @@ the fixes.
 - GPU clock lock 2200 MHz (`deploy/apply-2200.sh`,
   `gb10-clock-cap.service`); CPU cap 2808 MHz (`deploy/apply-2808.sh`,
   `gb10-cpu-cap.service`).
+- Kernel: `7.0.0-1019-nvidia-64k` qualified baseline (above);
+  display modeset off via the OEM override package (above).
