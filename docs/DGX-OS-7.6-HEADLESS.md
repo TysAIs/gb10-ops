@@ -1,4 +1,4 @@
-# Headless GB10, and why you don't update to the latest kernel yet
+# Headless GB10 on DGX OS 7.6
 
 ## The headless standard
 
@@ -32,17 +32,19 @@ Console/UEFI setup only (Esc/Del at boot), not an SSH command:
 - Verify by comparing available system memory before/after on that
   node; don't claim a fixed number for a node you haven't measured.
 
-## Don't update to the latest kernel yet
+## Kernel on 7.6: the -64k qualified baseline
 
-DGX OS 7.6 ships kernel `7.0.0-1019`, which is **forbidden** in this
-standard: NCCL/RoCE regression (`ibv_reg_mr_iova2` ENOMEM, GPU work
-1.5–2.4x slower). Kernel `7.0.0-1024` is also forbidden (idle resets /
-bootloops). The standard kernel is pinned `6.17.0-1032-nvidia` on
-every node; see `docs/HARDENING.md`.
+DGX OS 7.6's qualified kernel for this standard is
+`7.0.0-1019-nvidia-64k` (64 KiB pages), deployed uniformly and
+verified per node in Nov 2026; `6.17.0-1032-nvidia` stays installed
+as the rollback. `7.0.0-1024` remains forbidden (idle resets /
+bootloops, unqualified). The full policy, including why the old
+4 KiB 1019 warnings no longer gate the -64k variant, is in
+`docs/HARDENING.md`.
 
 7.6's *Dynamic* Display Reserved Memory (automatic carveout shrink)
-ships with that forbidden 7.6/1019 kernel. You don't need it: the
-manual UEFI setting above gets the reclaim on the pinned kernel.
+is a 7.6 feature; the manual UEFI setting above gets the same
+reclaim without depending on it.
 
 ## Firmware (per node)
 
@@ -51,9 +53,9 @@ fwupdmgr get-updates
 fwupdmgr update   # stages updates; a reboot activates them
 ```
 
-- EC **3.13.7** fixes fans stopping in headless/appliance mode. A
-  staged update ("Needs reboot") is not an applied update, verify
-  versions with `fwupdmgr get-devices` after rebooting.
+- Track the EC firmware version with `fwupdmgr get-devices`. A
+  staged update ("Needs reboot") is not an applied update; verify
+  versions after rebooting.
 - **Do not reboot a serving node without explicit approval.**
 - PD-controller check: in `fwupdmgr get-devices`, the USB-C PD
   controller appears as an entry named **UEFI Device Firmware** (no
