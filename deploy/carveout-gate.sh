@@ -38,7 +38,12 @@ set -uo pipefail
 DRIVERS_VALIDATED="580.178.04"   # node-validated upstream, heap mode only
 DRIVERS_SHIPPED="580.178.04 580.196.07 595.112.07 615.71.09 615.71.10 615.78.08 620.70.06"
 KERNELS_TESTED="7.0.0-1019-nvidia-64k 7.0.0-1024-nvidia 7.0.0-1024-nvidia-64k"
-OTHER_LENDERS="/run/dispram/ctrl.sock /run/kindling/dispram.sock"
+# The other carveout lender upstream names is Kindling's dispramd. Its
+# control socket is this path in kindling-spark-os (dispram/dispramd.py,
+# dispram/python/dispram.py, overlay/etc/systemd/system/dispramd.service),
+# Kindling gr8 (knobs/system.yaml, docs/ENV.md) and talos-dgx-kernel
+# (dispram/dispramd.c), all read 2026-11-16.
+OTHER_LENDERS="/run/dispram/dispram.sock"
 
 MODE="gate"
 HOSTS=()
@@ -57,6 +62,20 @@ while [ $i -le $# ]; do
     esac
     i=$((i+1))
 done
+
+# ---------------------------------------------------------------- self-test
+# --self-test runs the fixture suite from tests/ next to this script. It
+# needs no GB10, no privilege and no node: every case is a directory of
+# files standing in for a node's read-only state.
+if [ "$MODE" = "selftest" ]; then
+    here=$(cd "$(dirname "$0")" 2>/dev/null && pwd) || here=""
+    suite="$here/../tests/carveout-gate-selftest.sh"
+    if [ -z "$here" ] || [ ! -f "$suite" ]; then
+        echo "ERROR: --self-test needs tests/carveout-gate-selftest.sh beside this script (looked in ${here:-<unresolved>}/../tests)" >&2
+        exit 2
+    fi
+    exec bash "$suite"
+fi
 
 # ---------------------------------------------------------------- snapshot
 # Read-only gather into a directory. Every file written is a copy of
@@ -150,6 +169,14 @@ R="${FROM:-/}"
 [ -d "$R" ] || { echo "ERROR: no such snapshot: $R" >&2; exit 2; }
 read1() { head -1 "$R/$1" 2>/dev/null | tr -d '\r'; }
 has()   { case " $2 " in *" $1 "*) return 0 ;; esac; return 1; }
+# grep -c prints 0 AND exits 1 on an empty file, so `|| echo 0` appends a
+# second 0 and the value becomes "0\n0", which every [ -gt ] below rejects.
+# Count non-empty lines and default the empty string (missing file) to 0.
+count_lines() {
+    local n
+    n=$(grep -c . "$R/snapshot/$1" 2>/dev/null)
+    printf '%s' "${n:-0}"
+}
 blocked=(); warn=()
 block()   { blocked+=("$1"); }
 warn_on() { warn+=("$1"); }
@@ -162,9 +189,11 @@ pagesize=${pagesize:-65536}
 driver=$(sed -n 's/.*[[:space:]]\([0-9][0-9.]*\)[[:space:]]*Release.*/\1/p' "$R/proc/driver/nvidia/version" 2>/dev/null | head -1)
 [ -n "$driver" ] || driver=$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$R/proc/driver/nvidia/version" 2>/dev/null | head -1)
 modeset=$(read1 sys/module/nvidia_drm/parameters/modeset)
-dm=$(grep -c . "$R/snapshot/display_managers" 2>/dev/null || echo 0)
-holders=$(grep -c . "$R/snapshot/modeset_holders" 2>/dev/null || echo 0)
-lenders=$(grep -c . "$R/snapshot/other_lenders" 2>/dev/null || echo 0)
+dm=$(count_lines display_managers)
+holders=$(count_lines modeset_holders)
+lenders=$(count_lines other_lenders)
+lender_where=""
+[ -f "$R/snapshot/other_lenders" ] && lender_where=$(tr '\n' ' ' < "$R/snapshot/other_lenders" | sed 's/[[:space:]]*$//')
 default_target=$(read1 snapshot/get_default)
 memavail=$(sed -n 's/^MemAvailable:[[:space:]]*\([0-9]*\) kB/\1/p' "$R/proc/meminfo")
 largest=$(awk -v pg="$pagesize" '
@@ -209,7 +238,7 @@ elif ! has "$driver" "$DRIVERS_VALIDATED"; then
 fi
 [ "${dm:-0}" -eq 0 ] || block "a display manager is active: atticd lends nothing while a display is in use"
 [ "${holders:-0}" -eq 0 ] || block "a process other than nvidia-persistenced holds /dev/nvidia-modeset"
-[ "${lenders:-0}" -eq 0 ] || block "another carveout lender socket exists: one lender per node"
+[ "${lenders:-0}" -eq 0 ] || block "another carveout lender socket exists${lender_where:+ ($lender_where)}: one lender per node"
 has "$kernel" "$KERNELS_TESTED" || warn_on "kernel $kernel is outside upstream's tested matrix: node-test the numbers before trusting them"
 [ "$modeset" = "N" ] || warn_on "modeset reads '${modeset:-unreadable}', not N: this standard keeps modeset off, and with KMS on a later-attached display is not visible to atticd's connector check"
 [ "$default_target" = "multi-user.target" ] || warn_on "default target is ${default_target:-(unknown)}, not multi-user.target"
