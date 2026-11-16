@@ -158,8 +158,8 @@ matrix covers our kernel, and our driver is the single validated one —
 better than the premise this analysis started from (DGX OS 7.2.3 /
 kernel 6.17.0-1032), which the fleet left behind when it moved to the
 7.0.0-1019-64k baseline. The remaining variable is DGX OS *userland*
-version (upstream tested 7.6.0); our nodes are Ubuntu 24.04.5 either way,
-and atticd only reads `/proc`, `/sys` and the NVIDIA device nodes.
+version (upstream tested 7.6.0); our nodes run Ubuntu 24.04.x either way,
+and atticd reads only `/proc`, `/sys` and the NVIDIA device nodes.
 
 What that does **not** buy: our serving stack cannot take the memory yet.
 The live engine is vLLM 0.29.1rc1.dev187 with a custom TILELANG attention
