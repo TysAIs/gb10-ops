@@ -95,8 +95,25 @@ check display-holder 1 "holds /dev/nvidia-modeset"
 fixture "$WORK/display-manager" dm="gdm3 active"
 check display-manager 1 "display manager is active"
 
-fixture "$WORK/other-lender" lender="/run/dispram/ctrl.sock"
-check other-lender 1 "one lender per node"
+fixture "$WORK/other-lender" lender="/run/dispram/dispram.sock"
+check other-lender 1 "one lender per node" "verdict ELIGIBLE"
+out=$(bash "$GATE" --from "$WORK/other-lender" 2>&1)
+case "$out" in *"/run/dispram/dispram.sock"*) echo "ok   other-lender-named" ;;
+               *) echo "FAIL other-lender-named: the blocked line does not name the socket"; fails=$((fails+1)) ;; esac
+
+# The other-lender constant must stay the path dispramd really binds
+# (kindling-spark-os dispramd.py, gr8 knobs/system.yaml, talos-dgx-kernel
+# dispramd.c). A wrong constant makes this gate report 0 lenders on a node
+# that is already lending, which is the one thing it exists to catch.
+lender_const=$(sed -n 's/^OTHER_LENDERS="\(.*\)"$/\1/p' "$GATE")
+case "$lender_const" in
+    *"/run/dispram/dispram.sock"*) echo "ok   lender-constant" ;;
+    *) echo "FAIL lender-constant: OTHER_LENDERS is '$lender_const'"; fails=$((fails+1)) ;;
+esac
+case "$lender_const" in
+    *"/run/dispram/ctrl.sock"*|*"/run/kindling/dispram.sock"*)
+        echo "FAIL lender-constant: watches a socket no lender binds ($lender_const)"; fails=$((fails+1)) ;;
+esac
 
 fixture "$WORK/not-gb10" gpu="NVIDIA H100 80GB HBM3"
 check not-gb10 1 "no GB10"
@@ -126,6 +143,33 @@ fixture "$WORK/boost" boost=15000
 out=$(bash "$GATE" --from "$WORK/boost" 2>&1)
 case "$out" in *"watermark-boost-factor 15000"*) echo "ok   watermark-report" ;;
                *) echo "FAIL watermark-report"; fails=$((fails+1)) ;; esac
+
+# An empty-but-present marker file must count 0, not "0\n0". The shipped
+# gather() never creates these files empty, but --from DIR gates saved
+# snapshots, where an empty file is the normal shape.
+for which in display_managers modeset_holders other_lenders; do
+    name="empty-${which//_/-}"
+    fixture "$WORK/$name"
+    : > "$WORK/$name/snapshot/$which"
+    out=$(bash "$GATE" --from "$WORK/$name" 2>&1); rc=$?
+    if [ "$rc" -ne 0 ]; then
+        echo "FAIL $name: exit $rc, wanted 0"; echo "$out" | sed 's/^/    /'; fails=$((fails+1)); continue
+    fi
+    case "$out" in *"verdict ELIGIBLE"*) : ;; *)
+        echo "FAIL $name: no ELIGIBLE verdict"; echo "$out" | sed 's/^/    /'; fails=$((fails+1)); continue ;;
+    esac
+    case "$out" in *"blocked "*|*"integer expected"*)
+        echo "FAIL $name: an empty file produced a block"; echo "$out" | sed 's/^/    /'; fails=$((fails+1)); continue ;;
+    esac
+    case "$which" in
+        display_managers) want="display-manager inactive" ;;
+        modeset_holders)  want="modeset-holders 0" ;;
+        other_lenders)    want="other-lenders 0" ;;
+    esac
+    case "$out" in *"$want"*) echo "ok   $name" ;; *)
+        echo "FAIL $name: no '$want'"; echo "$out" | sed 's/^/    /'; fails=$((fails+1)) ;;
+    esac
+done
 
 echo ""
 if [ "$fails" -eq 0 ]; then echo "PASS: every gate case matched"; exit 0; fi
