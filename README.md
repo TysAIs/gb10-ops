@@ -15,9 +15,18 @@
 | Kernel | **Qualified `7.0.0-1019-nvidia-64k`** (64 KiB pages) on DGX OS 7.6, explicit GRUB pin; `6.17.0-1032-nvidia` kept installed as the known-good rollback | `docs/HARDENING.md` |
 | Boot default | **Explicit `7.0.0-1019-nvidia-64k` GRUB entry**, never `GRUB_DEFAULT=saved`; no reboot required | `deploy/apply-grub-default.sh`, `docs/HARDENING.md` |
 | Headless | `multi-user.target`, display stack off | `docs/DGX-OS-7.6-HEADLESS.md` |
+| Headless memory | `vm.watermark_boost_factor=0`; no `splash` on the command line; largest free block (`/proc/buddyinfo`) is a routine check | `docs/MEMORY-RECLAIM.md` |
 | Hardening | CVE sysctls + nftables LSRR/SSRR drop | `docs/HARDENING.md` |
 | Fabric (2+ nodes) | 200G ConnectX-7, twin IPs, MTU 9000, RDMA verified | `docs/QUAD-STACK.md` |
 | Node user | `gb10` (uid 1000) in the examples; use your own name consistently | this file |
+
+**Optional, gated component (not the standard):** the GB10 display
+carveout can be lent to CUDA as ~2 GiB more KV cache or weights
+(`bertholomus/spark-attic`). It is a per-node, driver-gated daemon that
+this repo gates but never installs. Read `docs/DISPLAY-CARVEOUT.md` for
+the measured numbers, the conflict with the UEFI reclaim step below, and
+the engine matrix; run `deploy/carveout-gate.sh <node>` before anything
+else. A node that never enables it follows the standard exactly.
 
 **Kernel baseline (updated Nov 2026):** the standard kernel is
 `7.0.0-1019-nvidia-64k` on DGX OS 7.6, the qualified baseline for the
@@ -68,10 +77,13 @@ Evidence: `docs/CPU-TUNING.md`.
    GRUB pin in `docs/HARDENING.md`. Keep `6.17.0-1032-nvidia`
    installed as the rollback.
 4. Apply both clock caps (below) and verify under load.
-5. Go headless and apply hardening (`docs/HARDENING.md`).
+5. Go headless, apply hardening (`docs/HARDENING.md`), and set
+   `vm.watermark_boost_factor=0` (`docs/MEMORY-RECLAIM.md`).
 6. Optional, console only: UEFI *Display Reserved Memory* → Auto
    reclaims ~1.5 GB on headless nodes, and *After Power Loss → Auto
-   Boot* enables real remote recovery (see Power / recovery).
+   Boot* enables real remote recovery (see Power / recovery). Pick this
+   **or** carveout lending, not both — Auto shrinks the region that
+   lending needs (`docs/DISPLAY-CARVEOUT.md`).
 7. Clustering? Continue with `docs/QUAD-STACK.md`.
 
 ## Deployment
@@ -82,6 +94,7 @@ bash deploy/apply-2808.sh node1 node2         # CPU cap (Tailscale node names, r
 bash deploy/apply-grub-default.sh --check node1 node2   # boot-default drift report (read-only)
 bash deploy/apply-grub-default.sh node1 node2           # explicit 7.0.0-1019-nvidia-64k GRUB default; no reboot
 bash deploy/apply-2200.sh --uninstall gb10@node1  # remove GPU cap
+bash deploy/carveout-gate.sh node1 node2         # read-only: may this node lend its display carveout?
 ```
 
 Example hostnames/IPs are examples. Substitute your own. The scripts
@@ -176,16 +189,21 @@ gb10-ops/
 ├── deploy/
 │   ├── apply-2200.sh          # GPU cap → gb10-clock-cap.service
 │   ├── apply-2808.sh          # CPU cap → gb10-cpu-cap.service
-│   └── apply-grub-default.sh  # explicit GRUB boot default, never "saved"
+│   ├── apply-grub-default.sh  # explicit GRUB boot default, never "saved"
+│   └── carveout-gate.sh       # read-only: may this node lend its display carveout?
 ├── docs/
 │   ├── CPU-TUNING.md          # CPU cap evidence (A/B v2 + burn test)
 │   ├── POWER-DELIVERY.md      # Defect research and methodology
 │   ├── HARDENING.md           # Kernel baseline + CVE mitigations
 │   ├── DGX-OS-7.6-HEADLESS.md # Headless standard + DGX OS 7.6 kernel baseline
+│   ├── MEMORY-RECLAIM.md      # Headless memory + fragmentation checks (Nov 2026)
+│   ├── DISPLAY-CARVEOUT.md    # Optional carveout lending: analysis, gates, verdict
+│   ├── APPLY-PLAN-2026-11.md  # Staged, unapplied plan for a 4-node fleet
 │   ├── QUAD-STACK.md          # N-node 200G fabric (any node count)
 │   └── DEEPSEEK-PLANNING.md   # Serving-recipe notes (not the standard)
 └── tests/
-    └── proper-sweep.sh        # llama-benchy clock-cap sweep
+    ├── proper-sweep.sh        # llama-benchy clock-cap sweep
+    └── carveout-gate-selftest.sh  # fixture tests for deploy/carveout-gate.sh
 ```
 
 ## Attribution
@@ -194,6 +212,8 @@ gb10-ops/
 - **hoesing/spark-gpu-throttle-check**: Power-delivery diagnostic
 - **miaai-lab/sparkLimiter**: Deployment pattern
 - **eugr/llama-benchy**: Benchmarking tool
+- **bertholomus/spark-attic**: Carveout lending (analyzed, gated, not installed here)
+- **Christopher Owen (christopherowen)**: Headless memory findings, 2026-11-16
 
 ## License
 
