@@ -5,10 +5,13 @@ nothing in this repo installs it, and a node that never uses it is a node
 that follows the standard exactly.
 
 Source: `bertholomus/spark-attic`, release 0.1.2, read 2026-11-16. All
-figures in "Measured upstream" are theirs, measured on an ASUS Ascent
-GX10 with stock DGX OS 7.6.0, kernel `7.0.0-1024-nvidia-64k`, driver
-`580.178.04`, atticd in heap mode with a node-validated shim; every
-"measured on our nodes" figure is a read-only capture on 2026-11-16.
+figures in "Measured upstream" are theirs. The TensorFold and vLLM rows
+were measured on an ASUS Ascent GX10 with stock DGX OS 7.6.0, kernel
+`7.0.0-1024-nvidia-64k`, driver `580.178.04`, atticd in heap mode with a
+node-validated shim. SGLang has **not** run on DGX OS yet: that row is an
+earlier run on kernel `7.0.0-1019-nvidia-64k` on Kindling Spark OS 0.9.5,
+so its speed is comparable only to its own off arm, not to the vLLM row.
+Every "measured on our nodes" figure is a read-only capture on 2026-11-16.
 
 ## What it is
 
@@ -38,23 +41,26 @@ holder exits.
 
 | Engine | Arm | KV pool (tokens) | Replies at temp 0 | Decode |
 |---|---|---|---|---|
-| TensorFold, Qwen3.8 Flash Next, bf16 KV, 262,144-token window | off | 224,256 | baseline | 45.6 tok/s (1 stream) |
+| TensorFold, Qwen3.8 Flash Next, bf16 KV, 262,144-token window (DGX OS, `7.0.0-1024-nvidia-64k`) | off | 224,256 | baseline | 45.6 tok/s (1 stream) |
 | | attic | 293,376 (+69,120) | identical 8/8, 3/3 at temp 1.0 | 45.1 tok/s, within the two off runs |
-| vLLM, Qwen3-1.7B, pinned 150,000-token budget | off | 150,000 | baseline | 52.2 tok/s (1 stream) |
+| vLLM, Qwen3-1.7B, pinned 150,000-token budget (DGX OS, `7.0.0-1024-nvidia-64k`) | off | 150,000 | baseline | 52.2 tok/s (1 stream) |
 | | kv | 168,688 (+18,688) | identical 8/8 | 51.9 tok/s |
-| SGLang, same shape | off | 150,000 | baseline | 50.5 tok/s |
+| SGLang, same shape (Kindling Spark OS, `7.0.0-1019-nvidia-64k`) | off | 150,000 | baseline | 50.5 tok/s |
 | | kv | 168,688 (+18,688) | identical 8/8 | 50.3 tok/s |
 
-The vLLM and SGLang arms add exactly what atticd lent (2,044 MiB); the
-TensorFold run put 2,032 MiB of it into keys and values. Every speed
-difference sits inside the run-to-run spread of the two off arms, so the
-honest statement is: more capacity, no decode speed change either way.
+In the vLLM and SGLang runs the arms add exactly what atticd lent
+(2,044 MiB); the TensorFold run put 2,032 MiB of it into keys and values.
+Every speed difference sits inside the run-to-run spread of that row's own
+off arms, so the honest statement is: more capacity, no decode speed change
+either way. The SGLang row is a different kernel and a different host, so
+it says nothing about vLLM's speed and vice versa.
 
 Idle `MemAvailable` is unchanged by lending — the memory was never in
 System RAM. (Their optional `vm.min_free_kbytes` file is a separate,
-unrelated reclaim on the 64 KiB-page kernel; our nodes already read
-45,166, the kernel's own default, so that file would change nothing for
-us.)
+unrelated reclaim on the 64 KiB-page kernel: it sets 45,560 without
+NVIDIA's transparent-hugepage rule. Our nodes read 45,166, so installing
+it would move the value by 394 kB — not "nothing", though the difference
+is immaterial for the reclaim it describes.)
 
 ## What applies to any GB10 owner, and what is specific
 
@@ -116,9 +122,14 @@ nothing until the new driver is built and validated on that node
 on success. That is the same fail-closed shape this repo already wants
 from kernel changes.
 
-**One lender per node.** The installer refuses while another carveout
-lender answers on a known socket. Two lenders on one node would fight
-over RM's heap. Our fleet has none installed (verified 2026-11-16).
+**One lender per node.** The installer's preflight refuses to run while
+another lender is listening, but it only watches the sockets named in
+`ATTIC_OTHER_SOCKETS`, and that list is empty by default: out of the box
+the check sees nothing, and the preflight says so in one warning line —
+that is not a pass. If the node runs Kindling's `dispramd`, set the list
+to `/run/dispram/dispram.sock` before installing (that is the socket
+`deploy/carveout-gate.sh` watches too). Two lenders on one node would
+fight over RM's heap. Our fleet has none installed (verified 2026-11-16).
 
 ## How it fails, and the asymmetry that matters
 
