@@ -52,21 +52,28 @@ fails, and `/run/spark-attic/status.json` then reads `state: refusing`
 with the reason in `why`. The one thing that is *not* fail-closed is the
 engine plugin after it has raised the KV budget (§4, risk R1).
 
-## 2. Stage 1 — standard hygiene (reversible, no serving impact)
+## 2. Stage 1 — standard hygiene (reversible; serving impact unmeasured on our nodes)
 
 Each step is independent and can be dropped.
 
 **1a. `vm.watermark_boost_factor = 0`.** Write
 `/etc/sysctl.d/90-watermark-boost.conf`, `sysctl --system`, re-read
 `MemAvailable` on the canary node. Expected: more reported available
-memory, no other change. Gate: if the canary shows no difference and no
-regression over 24 h of serving, apply to the other three the same day —
-uniform or not at all, because a mixed value makes cross-node capacity
-comparisons wrong. Revert: delete the file, `sysctl --system` (or reboot).
+memory, no other change. What it costs is **not measured on our nodes**:
+the boost exists so a burst of high-order allocations has slack, and
+upstream buys that slack back with a pre-launch defrag in its engine
+recipe — a step we do not ship (see `docs/MEMORY-RECLAIM.md` §3). Gate:
+canary node only, and if it shows no difference and no regression over
+24 h of serving, apply to the other three the same day — uniform or not
+at all, because a mixed value makes cross-node capacity comparisons
+wrong. Revert: delete the file, `sysctl --system` (or reboot).
 
 **1b. Stop the disabled-but-running `snapd`** on the node where it is
-enabled=disabled, active=running: `systemctl stop snapd.service`. It is
-not enabled, so it will not come back on its own. No reboot.
+enabled=disabled, active=running: `systemctl stop snapd.service
+snapd.socket`. Both units are disabled, so neither comes back at boot;
+stopping only the service is not enough, because on that node
+`snapd.socket` is also active and would socket-activate the service
+again. No reboot.
 
 **1c. Drop `splash` and the plymouth arguments** from the kernel command
 line at the next planned boot (a GRUB edit, per `docs/HARDENING.md`).

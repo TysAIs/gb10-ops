@@ -59,13 +59,14 @@ sysctl vm.watermark_boost_factor      # expect 0
 ```
 
 Cost: the boost exists so that a burst of high-order allocations has
-slack. The engine's own pre-launch defrag (§3) does that job deliberately
-instead, with the engine stopped, which is the better trade. Reversible
-with no reboot. **Status: standard step, cited to the 2026-11-16 article;
-not yet measured on our nodes.** Measure it on one node before rolling it
-across a fleet, and keep it uniform — a mixed value is a cross-node
-difference in reported available memory, which is exactly what makes
-capacity conversations go wrong.
+slack. Upstream buys that slack back with a pre-launch defrag in its
+engine recipe, but that defrag is §3 work we do not ship today, so on our
+nodes the slack is simply gone until someone measures what it was worth.
+Reversible with no reboot. **Status: standard step, cited to the
+2026-11-16 article; not measured on our nodes.** Measure it on one node
+before rolling it across a fleet, and keep it uniform — a mixed value is a
+cross-node difference in reported available memory, which is exactly what
+makes capacity conversations go wrong.
 
 ### Drop `splash` from the kernel command line (adopt as cleanup)
 
