@@ -24,6 +24,7 @@
 #   bash deploy/apply.sh --inventory inventory.txt --rollback
 #   bash deploy/apply.sh node1 node2 --dry-run        # nodes as arguments
 #   bash deploy/apply.sh --inventory inventory.txt --apply --stage 1
+#   bash deploy/apply.sh --inventory inventory.txt --verify --stage 1
 #   bash deploy/apply.sh --root DIR --apply           # test hook, see below
 #
 # Inventory file: one node per line, blank lines and '#' comments ignored.
@@ -32,8 +33,8 @@
 #   gb10@node2 http://node1.example:8000/health
 # Any count from 1 to 8. A single node needs no switch, no cluster and no
 # fabric: with one node you write one line and stop there. Health URLs are
-# optional; when one is declared it is read before and after, and must not
-# change.
+# optional; when one is declared, --verify reads it once, after the stages,
+# and it must answer 200.
 #
 # Modes:
 #   --check-inventory
@@ -42,12 +43,15 @@
 #   --dry-run   read-only. Runs the gate, reads the node's current state and
 #               prints what --apply would do. Nothing is written anywhere.
 #   --apply     stage 1 and stage 2, in that order, per node. Idempotent: a
-#               node that is already applied reports "noop" and exits 0.
+#               node already in the standard state reports "noop" and exits
+#               0; a node whose daemon reports a borrow (lent_mib) is not a
+#               noop, it fails.
 #   --verify    re-reads everything --apply checked, changes nothing.
 #   --rollback  reverses stage 2, then stage 1a, in that order.
 #
 # Flags:
-#   --stage 1|2|all     restrict apply/rollback to one stage (default all)
+#   --stage 1|2|all     restrict --dry-run, --apply, --verify and --rollback
+#                       to one stage (default all)
 #   --inventory FILE    node list (see above)
 #   --allow-any-count   do not warn when the inventory has more than 8 nodes
 #   --root DIR          run against a fake node root instead of over ssh.
@@ -65,8 +69,8 @@
 #                        inventory nor the arguments name any.
 #
 # Exit codes: 0 every node applied/noop/verified, 1 at least one node failed
-# or was blocked, 2 usage error, 3 skipped everywhere (no ssh or no
-# privilege) with no failures.
+# or was blocked, 2 usage error, 3 no failures but at least one node was
+# skipped (no ssh, or no root/passwordless sudo on the node).
 
 set -uo pipefail
 
@@ -350,10 +354,16 @@ stage1_snapd() {
 
 # ---- stage 2 -----------------------------------------------------------
 stage2_attic() {
+    local lent
     case "$MODE" in
     plan)
         if attic_ready; then
-            echo "stage2 attic noop state $(jstr state) size_mib $(jnum size_mib) lent_mib $(jnum lent_mib)"
+            lent=$(jnum lent_mib)
+            if [ "${lent:-x}" != 0 ]; then
+                echo "stage2 attic installed state $(jstr state) size_mib $(jnum size_mib) lent_mib ${lent:-missing} (--apply would refuse: stage 2 leaves lent_mib 0)"
+            else
+                echo "stage2 attic noop state $(jstr state) size_mib $(jnum size_mib) lent_mib ${lent:-unknown}"
+            fi
         elif attic_present; then
             echo "stage2 attic pending-installed state $(jstr state) (not ready; installer would repair)"
             echo "would run installer --check, then the installer"
@@ -364,7 +374,19 @@ stage2_attic() {
         ;;
     apply)
         if attic_ready; then
-            echo "stage2 attic noop state $(jstr state) size_mib $(jnum size_mib) lent_mib $(jnum lent_mib)"
+            # attic_ready() answers "is the daemon installed and validated",
+            # which is not the same question as "is this the state stage 2
+            # leaves behind". A daemon that already lends (something borrowed
+            # the carveout) is installed and ready, so this branch is reached;
+            # reporting it as a noop would call the run clean while --verify
+            # fails the same node on lent_mib. Refuse instead.
+            lent=$(jnum lent_mib)
+            if [ "${lent:-x}" != 0 ]; then
+                echo "stage2 attic installed state $(jstr state) size_mib $(jnum size_mib) lent_mib ${lent:-missing}"
+                fail "attic: lent_mib '${lent:-missing}', wanted 0 (stage 2 adds a daemon, it does not lend)"
+                return 1
+            fi
+            echo "stage2 attic noop state $(jstr state) size_mib $(jnum size_mib) lent_mib $lent"
             return 0
         fi
         echo "stage2 preflight: installer --check"

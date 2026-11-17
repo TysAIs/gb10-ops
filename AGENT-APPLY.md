@@ -5,9 +5,10 @@ the same procedure repeated, and nothing below counts nodes or assumes a
 switch, a fabric or a cluster.
 
 This file is written to be executed, not read for background: every step
-names the command, the output that means it worked, and the condition that
-means stop. If you are an agent, follow the steps in order and do not skip
-a stop condition. If you are a human, the same steps are the checklist.
+that runs something names the command, the output that means it worked, and
+the condition that means stop. If you are an agent, follow the steps in
+order and do not skip a stop condition. If you are a human, the same steps
+are the checklist.
 
 **What it applies.** Two things, in this order:
 
@@ -75,9 +76,13 @@ bash deploy/carveout-gate.sh --self-test
 
 **Expect** the last line `PASS: every gate case matched`, exit code 0.
 
-**Stop if** it prints `FAIL` or exits non-zero: the checkout is incomplete
-or bash is older than 4. Nothing else below can be trusted until this
-passes.
+**Stop if** it prints `FAIL` or exits non-zero: the checkout is incomplete,
+bash is older than 4, or your shell's `TMPDIR` is deep enough that the
+self-test's unix-socket fixture exceeds the 108-character `AF_UNIX` limit
+(`OSError: AF_UNIX path too long`). The third is not a repo fault and not a
+gate verdict: re-run it with a short temporary directory,
+`TMPDIR=/tmp bash deploy/carveout-gate.sh --self-test`, and expect the same
+`PASS` line. Nothing else below can be trusted until this passes.
 
 ## Step 2 — Write the inventory
 
@@ -109,7 +114,8 @@ gb10@node8
 EOF
 ```
 
-**Expect** one `node <i> <target> health <url|none>` line per node, then
+**Expect** the first line `nodes <N> mode check stage all`, then one
+`node <i> <target> health <url|none>` line per node, then
 `inventory ok <N> node(s)`, exit code 0.
 
 **Stop if** it reports a duplicate node, `more than two fields`, or
@@ -145,18 +151,26 @@ bash deploy/carveout-gate.sh gb10@node1
 ```
 
 (For eight nodes, pass them all: `bash deploy/carveout-gate.sh gb10@node1
-gb10@node2 ... gb10@node8`. Each node is gated independently and the exit
-code is the worst of them.)
+gb10@node2 ... gb10@node8`. Each node is gated independently. The run exits
+with the last node code that was not 0 — `1` if any node was blocked, `3`
+only when nothing failed and a node could not be reached — so read each
+node's own verdict rather than the run's exit code.)
 
-**Expect** a block of `key value` lines and the final line:
+**Expect** a block of `key value` lines — including the `warn` lines, which
+are printed before the verdict — then this verdict line:
 
 ```
 verdict ELIGIBLE
 ```
 
-`warn` lines may follow or precede it and are not stops — they name things
-to settle before installing, such as `splash` still on the command line or
-a kernel outside upstream's tested matrix.
+The verdict is not the last line. `next: settle every warn line above, then
+rerun this gate before installing` follows it when there is a warning,
+otherwise `next (a human runs these; this script changes nothing):` and the
+installer's `--check` command. None of that is output from the node and none
+of it changes anything: the gate is read-only. The `warn` lines themselves
+are not stops either: they name things to settle before installing, such as
+`splash` still on the command line or a kernel outside upstream's tested
+matrix.
 
 **Stop if** the verdict is `BLOCKED`, and act on the reason it printed:
 
@@ -172,7 +186,9 @@ a kernel outside upstream's tested matrix.
 
 A blocked node is not a broken node. It is a node where lending is the
 wrong choice today. Stage 1 does not depend on the gate, so you may still
-apply stage 1 there (step 6) — `--apply --stage 2` refuses.
+apply stage 1 there (step 6) — `--apply --stage 2` refuses. A node you leave
+that way carries stage 1 only, so it is verified with `--verify --stage 1`
+(step 8), not with plain `--verify`, which expects the daemon.
 
 ## Step 5 — Dry run
 
@@ -185,8 +201,27 @@ bash deploy/apply.sh --inventory inventory.txt --dry-run
 the changes, and finally `node verdict OK` and
 `RESULT: plan only, nothing changed on any node`, exit code 0.
 
-**Stop if** any node prints `node verdict BLOCKED`, `FAIL`, or `SKIPPED`.
-Go back to steps 3 and 4. `--dry-run` runs only reads and the gate.
+A gate-BLOCKED node still gets a plan, and that plan still ends
+`node verdict OK` — nothing was changed anywhere, so nothing failed. What
+says "do not run this as written" is the run's exit code: the last line is
+`RESULT: at least one node is not eligible for the full run` and the run
+exits 1, while that node's block carries `gate BLOCKED` and
+`gate note not ELIGIBLE: stage 1 is node hygiene and does not need the
+gate; stage 2 would be refused`. Its stage 1 lines are still a real plan,
+and step 6 may proceed on stage 1 alone.
+
+One state reports a refusal without changing the exit code: a node whose
+daemon is already installed and reports a borrow prints
+`stage2 attic installed state ... lent_mib <n>` where a clean node prints
+`stage2 attic noop ...`, and the plan appends `--apply would refuse` to that
+line. That is a stop, not a noop: `--apply` refuses that node (step 7), so
+the plan exits 0 but the run would not.
+
+**Stop if** the exit code is not 0, or any node prints `gate BLOCKED`,
+`node verdict BLOCKED`, `node verdict FAIL`, `node verdict SKIPPED`, or
+`stage2 attic installed state`. The exit code is the reliable signal for
+gate refusals; the state line is the bit it cannot carry. Go back to steps 3
+and 4. `--dry-run` runs only reads and the gate.
 
 ## Step 6 — Apply stage 1
 
@@ -273,6 +308,11 @@ and is what the next line reports.
 `--apply` with no `--stage` runs stage 1 then stage 2 per node, and is the
 normal whole-run command once stage 1 has been seen working somewhere.
 
+The `lent_mib` row fires on a node that is already installed too: a daemon
+that reports a borrow is not "already applied", so `--apply` fails that node
+rather than reporting a noop. That is deliberate — a daemon lending when
+nothing should be borrowing is a consumer to find, not a clean state.
+
 ## Step 8 — Verify
 
 ```bash
@@ -293,9 +333,32 @@ and `RESULT: every node verified`, exit code 0. When no health URL is
 declared the serving line is `verify serving skipped (no endpoint declared
 in inventory)` — not a failure.
 
-**Stop if** any line starts with `FAIL`. Re-run `--dry-run` to see the
-node's current state, then `--apply` again: every step is idempotent, and
-the output names the step that is not in the expected state.
+**Stop if** any line starts with `FAIL`, with one exception you must not
+mistake for a fault: the four attic checks on a node you deliberately left
+without stage 2 (a gate-BLOCKED node from step 4). Verify that node with
+`--verify --stage 1` instead, as below. Anything else that FAILs is a stop.
+Re-run `--dry-run` to see the node's current state, then `--apply` again:
+every step is idempotent, and the output names the step that is not in the
+expected state.
+
+### Verifying a node that is deliberately left without stage 2
+
+If you applied stage 1 only — the usual reason is a gate-BLOCKED node from
+step 4 — plain `--verify` is the wrong check. It expects the daemon, so it
+reports `FAIL attic: state 'missing'`, `validated 'missing'`,
+`size_mib 'missing'` and `lent_mib 'missing'`, and exits 1; and its remedy,
+`--apply` again, is refused by the gate on that node for as long as the gate
+says BLOCKED. Verify the stage the node actually carries:
+
+```bash
+bash deploy/apply.sh --inventory inventory.txt --verify --stage 1
+```
+
+**Expect** `verify watermark ok reads 0 standard-file yes`,
+`verify snapd ok ...`, `verdict VERIFIED`, `RESULT: every node verified`,
+exit code 0. `--stage` filters `--verify` as well as `--apply` and
+`--rollback`; it is not an apply-only flag. Run the plain `--verify` of the
+block above on the nodes that were gated ELIGIBLE.
 
 ## Step 9 — Record what you did
 
@@ -312,6 +375,10 @@ rollback:   not needed
 ```
 
 Do not commit `inventory.txt`: it is site data, not repo data.
+
+**Stop if** you cannot fill a line in from output this run actually printed.
+The record is a copy of what you saw, not a summary from memory: a line you
+are reconstructing means the step it describes was not observed.
 
 ## Step 10 — Roll back, if you need to
 
@@ -342,6 +409,11 @@ to put back. If you want `snapd` running again:
 Rollback does not need the gate and works on a node that would now be
 blocked.
 
+**Stop if** a node prints `FAIL` or `node verdict SKIPPED`: rollback needs
+`sudo -n` exactly as apply does. `gate BLOCKED` followed by
+`node verdict OK` is the expected shape on a node that is blocked today —
+rollback never asks the gate for permission.
+
 ## Step 11 — Stop here, at stage 2
 
 You are done. Stage 2's end state is a validated daemon that lends nothing:
@@ -368,7 +440,9 @@ this repository. The vocabulary is fixed:
 | `stage1 watermark noop reads 0 standard-file yes` | already in the standard state; nothing written |
 | `stage1 snapd applied service inactive socket inactive` | both units stopped |
 | `stage1 snapd noop ...` | already stopped, or not installed |
-| `stage2 attic noop state ready ...` | daemon already installed and validated; no installer run |
+| `stage2 attic noop state ready ... lent_mib 0` | daemon already installed and validated; no installer run |
+| `stage2 attic installed state ... lent_mib <n>` | installed, but something borrowed the carveout: `--apply` refuses that node, and a plan says so instead |
+| `FAIL attic: lent_mib 'N', wanted 0 ...` | a borrow exists where stage 2 leaves none; find the consumer (step 7) |
 | `verify attic ok state ready validated true size_mib <n> lent_mib 0 ...` | the only acceptable stage 2 end state |
 | `verify serving ok 200` | the declared health endpoint answered |
 | `verdict APPLIED-OR-NOOP` | that node's stage run finished clean |
@@ -376,8 +450,9 @@ this repository. The vocabulary is fixed:
 | `RESULT: ...` | the run's overall result, followed by the exit code |
 
 Exit codes: `0` every node clean, `1` at least one node failed or was
-blocked, `2` usage error, `3` skipped everywhere (no ssh or no `sudo -n`)
-with no failures.
+blocked, `2` usage error, `3` no failures but at least one node was skipped
+(no ssh, or no `sudo -n`). A skipped node never hides a failure: if any node
+failed or was blocked the run exits `1`, not `3`.
 
 ## Appendix B — the whole stop list on one page
 
@@ -385,7 +460,9 @@ with no failures.
 2. An inventory error: duplicate, more than two fields, no nodes.
 3. SSH or `sudo -n` prompted or failed on a node.
 4. The gate printed `BLOCKED` for a node — use the table in step 4.
-5. A `FAIL` line in `--dry-run`, `--apply` or `--verify`.
+5. A `FAIL` line in `--dry-run`, `--apply` or `--verify` that step 7 or step 8
+   does not account for. (The four attic checks on a node you deliberately
+   left at stage 1 are not a fault; verify those with `--verify --stage 1`.)
 6. `lent_mib` is not `0` after stage 2.
 7. Anything asks you to change an engine variable, a recipe, a container
    or a kernel. That is stage 3 or another document; stop.

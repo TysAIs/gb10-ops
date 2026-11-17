@@ -156,6 +156,26 @@ OUT=$(FAKE_LENT_MIB=7 run_apply "$R3" --apply "gb10@node3"); RC=$?
 expect lending-fails 1 "lent_mib"
 case "$OUT" in *"wanted 0"*) pass "lending: the failure names the expectation" ;; *) bad "lending: the failure does not name lent_mib 0" "$OUT" ;; esac
 
+# The same refusal has to fire when the daemon is ALREADY installed: attic_ready()
+# only asks "installed and validated", so this node takes the noop branch. Before
+# lent_mib was checked there, --apply reported 'every node applied or already
+# applied' with exit 0 for a node --verify fails on the same field.
+R7="$WORK/node7"
+fixture "$R7"
+OUT=$(run_apply "$R7" --apply "gb10@node7"); RC=$?
+expect lending-noop-setup 0 "verdict APPLIED-OR-NOOP"
+sed -i 's/"lent_mib":0/"lent_mib":7/' "$R7/run/spark-attic/status.json"
+h_lending=$(treehash "$R7")
+OUT=$(run_apply "$R7" --dry-run "gb10@node7"); RC=$?
+expect lending-noop-plan 0 "stage2 attic installed state"
+case "$OUT" in *"lent_mib 7"*) pass "already-lending plan names lent_mib 7" ;; *) bad "already-lending plan hid lent_mib" "$OUT" ;; esac
+OUT=$(run_apply "$R7" --apply "gb10@node7"); RC=$?
+expect lending-noop-fails 1 "FAIL attic: lent_mib '7', wanted 0"
+case "$OUT" in *"node verdict FAIL"*) pass "already-lending apply: node verdict FAIL" ;; *) bad "already-lending apply: node verdict is not FAIL" "$OUT" ;; esac
+[ "$h_lending" = "$(treehash "$R7")" ] && pass "already-lending apply changed nothing" || bad "already-lending apply changed the tree"
+OUT=$(run_apply "$R7" --verify "gb10@node7"); RC=$?
+expect lending-noop-verify-agrees 1 "FAIL attic: lent_mib '7', wanted 0"
+
 # ---------------------------------------------------------------- 7. rollback
 OUT=$(run_apply "$R1" --rollback "gb10@node1"); RC=$?
 expect rollback 0 "verdict ROLLED-BACK"
