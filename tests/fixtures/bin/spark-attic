@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# TEST DOUBLE for the spark-attic CLI, used only by tests/apply-selftest.sh.
+# Reads the same world-readable status file the real daemon writes.
+set -u
+R="${NODE_ROOT:?fake spark-attic needs NODE_ROOT}"
+S="$R/run/spark-attic/status.json"
+case "${1:-}" in
+    status)
+        [ -f "$S" ] || { echo "no status file"; exit 1; }
+        cat "$S" ;;
+    doctor)
+        [ -f "$S" ] || { echo "not installed"; exit 1; }
+        [ "${FAKE_DOCTOR_FAIL:-0}" = 1 ] && { echo "doctor: libcuda.so.1 is missing (simulated false negative)"; exit 1; }
+        grep -Eq '"state"[[:space:]]*:[[:space:]]*"ready"' "$S" || { echo "state is not ready"; exit 1; }
+        grep -Eq '"validated"[[:space:]]*:[[:space:]]*true' "$S" || { echo "not validated"; exit 1; }
+        exit 0 ;;
+    uninstall|remove)
+        rm -f "$S"
+        rm -rf "$R/var/lib/fake-units/attic.service"
+        echo "uninstalled (test double)" ;;
+    *) exit 0 ;;
+esac

@@ -1,5 +1,8 @@
 # CPU tuning on GB10: measured (2026-11-02)
 
+What is applied and verified on the reference fleet today, with the readback
+for each item, is the status table in `README.md`.
+
 GB10: 10x Cortex-X925 (hw max 3900 MHz) + 10x Cortex-A725 (hw max 2808 MHz),
 one cpufreq policy per CPU. CPPC auto_select ships ON (=1); with it on,
 scaling_max_freq changes are ignored by hardware. Any cap work starts with

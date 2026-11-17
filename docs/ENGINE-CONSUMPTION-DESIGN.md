@@ -11,6 +11,13 @@ This note answers the question left open by `docs/DISPLAY-CARVEOUT.md` and
 engine to use spark-attic's lent carveout as KV cache, what would prove it,
 and what is it worth.
 
+Status, 2026-11-16: **analysis only, and stage 3 is not applied.** The
+daemon is installed on the reference fleet (stage 2, `lent_mib 0`); nothing
+here has been run against a node. Component credit: **spark-attic**,
+author **bertholomus**, https://github.com/bertholomus/spark-attic,
+**Apache-2.0 OR MIT**. The engine described below is the maintainer's
+serving stack, referenced by version and commit, with no site detail.
+
 Short answer: the engine is closer to compatible than its version number
 suggests — its KV allocation matches the shape the plugin knows, function for
 function — but the gain is capacity we do not currently use (0.5–5.6 % of the

@@ -1,15 +1,34 @@
 # Staged apply-plan: carveout lending and headless memory (2026-11-16)
 
-Status: **plan only. Nothing in this document has been applied to any
-node.** No config change, no install, no restart, no engine action. The
-nodes are read-only territory until the owner of the cluster says go,
-stage by stage. Analysis behind this plan: `docs/DISPLAY-CARVEOUT.md` and
-`docs/MEMORY-RECLAIM.md`.
+Status, 2026-11-16 19:35 MST. This was a plan; it is now applied in the
+stages it describes, on the maintainer's four-node reference fleet:
+
+- **Stage 1: applied and verified on all four nodes.**
+  `vm.watermark_boost_factor` reads back `0` with a persistent drop-in on
+  every node; `snapd.service` and `snapd.socket` are inactive/disabled on
+  every node (one node had them disabled-but-running); `splash` is removed
+  from the vendor GRUB drop-in and the regenerated `grub.cfg` on all four,
+  and the live command line still carries it until the next planned boot.
+- **Stage 2: applied and verified on all four nodes.** `attic.service`
+  enabled+active with `NRestarts=0`; status reads `state: ready`,
+  `validated: true`, `size_mib: 2044`, `lent_mib: 0` everywhere; 2816 KB
+  RSS, 0.1–0.3 % CPU; no serving container was restarted.
+- **Stage 3: not applied.** Unchanged from the analysis below: gated on
+  serving-recipe work in another repository, with a scratch-engine test
+  protocol in `docs/ENGINE-CONSUMPTION-DESIGN.md`. It is 0 usable tokens
+  today.
+
+Nothing outside stages 1 and 2 was changed: no engine, no recipe, no
+container, no kernel, no firmware, no reboot. The procedure for any node
+count, including the rollback, is `AGENT-APPLY.md`; this document is the
+analysis and the record of what that procedure did here.
 
 ## 0. Baseline (read-only, 2026-11-16)
 
 Captured with reads only; no privilege beyond `sudo cat` on two
-world-unreadable parameters.
+world-unreadable parameters. Four columns because that is the reference
+fleet, not because anything below needs four nodes: every step is per node
+and the runbook (`AGENT-APPLY.md`) is identical for one node or eight.
 
 | | node 1 | node 2 | node 3 | node 4 |
 |---|---|---|---|---|
@@ -52,68 +71,91 @@ fails, and `/run/spark-attic/status.json` then reads `state: refusing`
 with the reason in `why`. The one thing that is *not* fail-closed is the
 engine plugin after it has raised the KV budget (§4, risk R1).
 
-## 2. Stage 1 — standard hygiene (reversible; serving impact unmeasured on our nodes)
+## 2. Stage 1 — standard hygiene (applied 2026-11-16, all four nodes)
 
-Each step is independent and can be dropped.
+Each step is independent and can be dropped. What each one did on the
+reference fleet is stated with it; the procedure is in `AGENT-APPLY.md`
+steps 6 and 10.
 
-**1a. `vm.watermark_boost_factor = 0`.** Write
-`/etc/sysctl.d/90-watermark-boost.conf`, `sysctl --system`, re-read
-`MemAvailable` on the canary node. Expected: more reported available
-memory, no other change. What it costs is **not measured on our nodes**:
-the boost exists so a burst of high-order allocations has slack, and
-upstream buys that slack back with a pre-launch defrag in its engine
-recipe — a step we do not ship (see `docs/MEMORY-RECLAIM.md` §3). Gate:
-canary node only, and if it shows no difference and no regression over
-24 h of serving, apply to the other three the same day — uniform or not
-at all, because a mixed value makes cross-node capacity comparisons
-wrong. Revert: delete the file, `sysctl --system` (or reboot).
+**1a. `vm.watermark_boost_factor = 0`.** Writes
+`/etc/sysctl.d/90-watermark-boost.conf`, `sysctl --system`, re-read the
+value. Applied on all four: the drop-in is present, `sysctl --system`
+exited 0, and the live value reads back `0` on every node.
 
-**1b. Stop the disabled-but-running `snapd`** on the node where it is
-enabled=disabled, active=running: `systemctl stop snapd.service
-snapd.socket`. Both units are disabled, so neither comes back at boot;
-stopping only the service is not enough, because on that node
-`snapd.socket` is also active and would socket-activate the service
-again. No reboot.
+What it is worth is **not measured on these nodes**, and the honest record
+is that the plan's own expectation did not materialise: `MemAvailable`
+moved −96/+104/−11/+78 MiB across the four, which is noise. The knob's
+job is the reclaim/compaction slack for high-order bursts, not the
+available-memory estimate; what removing that slack costs is the step
+upstream buys back with a pre-launch defrag in its engine recipe, which we
+do not ship (see `docs/MEMORY-RECLAIM.md` §3). Keep it uniform: a mixed
+value makes cross-node capacity comparisons wrong.
 
-**1c. Drop `splash` and the plymouth arguments** from the kernel command
-line at the next planned boot (a GRUB edit, per `docs/HARDENING.md`).
-Cosmetic; do it with the next kernel-default change rather than as its
-own reboot.
+Revert: removing the drop-in and running `sysctl --system` does **not**
+restore the previous value — no stock file sets this key, so the live
+kernel would keep `0` until a reboot. `deploy/apply.sh --rollback` writes
+back the value it recorded before applying (`15000` on every node here),
+which is the only exact inverse.
 
-**1d. Add the largest-free-block figure to routine checks.** Use
-`deploy/carveout-gate.sh` (read-only) or the one-liner in
-`docs/MEMORY-RECLAIM.md` §4. No change to the node.
+**1b. Stop the disabled-but-running `snapd`.** `systemctl stop
+snapd.service snapd.socket`. Both units are disabled, so neither returns at
+boot; stopping only the service is not enough where the socket is also
+active, because it would socket-activate the service again. Applied on all
+four; only one node actually had both units active. No reboot.
 
-Nothing in stage 1 requires a reboot except 1c, and 1c can wait for one.
+**1c. Drop `splash` and the plymouth arguments from the kernel command
+line.** On DGX OS the authoritative source is not `/etc/default/grub` but
+the vendor drop-in `/etc/default/grub.d/menu.cfg`; it was edited to drop
+`splash`, `update-grub` regenerated the menu on all four, and the generated
+`grub.cfg` now has zero `splash` occurrences. The live `/proc/cmdline`
+still carries it, because no node was rebooted: this becomes true at the
+next planned boot. Cosmetic; it is a GRUB edit, not a live change.
 
-## 3. Stage 2 — the daemon alone, on one canary node
+**1d. Add the largest-free-block figure to routine checks.** Done as
+documentation and a read: `deploy/carveout-gate.sh` prints
+`largest-free-block-mib`, and `docs/MEMORY-RECLAIM.md` §4 has the
+one-liner. No change to any node.
+
+Nothing in stage 1 requires a reboot except 1c, and 1c waits for one.
+
+## 3. Stage 2 — the daemon alone (applied 2026-11-16, all four nodes)
 
 This is the only step that touches a node, and it adds a daemon, not a
 capability: nothing consumes the carveout until stage 3, so serving cannot
-change.
+change. It was applied canary first, then the remaining nodes, each one
+gated immediately before its install.
 
-1. `bash deploy/carveout-gate.sh <canary>` — must print `verdict ELIGIBLE`
-   and no `blocked` line.
-2. `curl -fsSL https://github.com/bertholomus/spark-attic/releases/download/v0.1.2/install.sh | sudo bash -s -- --check`
-   — upstream's read-only preflight; writes nothing.
-3. Install with the same command without `--check`. The installer verifies
-   the release checksum, validates the running driver on the node, and
-   enables the unit only if that passed.
-4. Verify, all reads:
-   - `spark-attic status` — `state: ready`, `size_mib: 2044`,
-     `validated: true`, `driver: 580.178.04`.
-   - `cat /run/spark-attic/status.json` — `lent_mib: 0` (nothing has
-     borrowed).
-   - `spark-attic doctor` — exit 0.
-   - serving still answers on its endpoint, unchanged.
-5. Soak 24–48 h: daemon CPU near zero, RSS small, `lent_mib` still 0,
-   no `refusing` transition, serving metrics unchanged.
+1. `bash deploy/carveout-gate.sh <node>` — printed `verdict ELIGIBLE` with
+   zero `blocked` lines on every node; the only warning was `splash` still
+   on the live command line, which is stage 1c.
+2. Upstream's read-only preflight (`install.sh --check`) passed with the
+   driver validated for heap mode.
+3. Install: spark-attic 0.1.2, verified release checksum, driver
+   `580.178.04` validated on the node before the unit was enabled.
+4. Verified, all reads, on all four nodes: `state: ready`,
+   `validated: true`, `size_mib: 2044`, `lent_mib: 0`, `clients: 0`;
+   `attic.service` enabled+active, `NRestarts=0`; 2816 KB RSS and
+   0.1–0.3 % CPU; the serving container was `Up 2 days` before and after
+   with no restart, and the serving endpoint answered 200 at the same
+   latency as before the install.
+5. Soak: the daemon idles at `lent_mib 0`. It is not a soak of lending,
+   because nothing has been lent.
 
-Stop here if the purpose was only to prove the gate: an installed atticd
-that nobody borrows from costs a small resident daemon and nothing else.
-Uninstall (§6) if even that is unwanted.
+One caveat worth carrying: `spark-attic doctor` intermittently reports
+`libcuda.so.1` missing on a node where it resolves and dlopens correctly.
+The cause is upstream's installer running under `set -o pipefail`, where
+`ldconfig -p | grep -q` turns grep's early exit into a SIGPIPE failure.
+`status.json` is the daemon's own state and is authoritative;
+`deploy/apply.sh` treats a doctor failure as a warning for that reason.
+
+Stop after stage 2 if the purpose was only to prove the gate: an installed
+atticd that nobody borrows from costs a small resident daemon and nothing
+else. Uninstall (§6) if even that is unwanted.
 
 ## 4. Stage 3 — engine consumption: blocked on recipe work, not on this plan
+
+**Status: not applied anywhere. Nothing consumes the carveout today
+(`lent_mib: 0` on every node).** This stage stays gated.
 
 **Do not do this stage as an experiment on the serving cluster.** It needs
 changes to the serving recipe, which is a different repository and a
@@ -212,7 +254,10 @@ sudo spark-attic uninstall       # keeps the key and logs; --purge removes them
 # memory a live process still holds returns when that process exits
 
 # watermark boost (stage 1a)
-sudo rm /etc/sysctl.d/90-watermark-boost.conf && sudo sysctl --system
+# Removing the drop-in is not enough: no stock file sets this key, so the
+# live kernel keeps 0 until a reboot. Restore the recorded value explicitly.
+sudo rm -f /etc/sysctl.d/90-watermark-boost.conf
+sudo sysctl -w vm.watermark_boost_factor=15000      # 15000 is the stock default here
 
 # splash (stage 1c)
 # re-add it in /etc/default/grub and regenerate at the next planned boot
@@ -224,7 +269,8 @@ edit.
 
 ## 7. What this plan does not do
 
-- It does not change any node by itself.
+- It does not change any node by itself: the procedure in `AGENT-APPLY.md`
+  did, and §2 and §3 above are the record of that.
 - It does not change the serving recipe, the model, the engine flags or
   the fabric.
 - It does not claim a speed-up: upstream measured decode within noise and
@@ -233,3 +279,18 @@ edit.
   (defrag before launch, the load-time sponge, `TORCH_DIST_USE_NCCL2=0`).
   Those are recipe changes; they are tracked there, and the last one does
   not apply to our current torch 2.13 image.
+
+## Credits
+
+The optional component this plan stages is not ours:
+
+- **spark-attic** — author **bertholomus**, source
+  https://github.com/bertholomus/spark-attic, license **Apache-2.0 OR MIT**
+  (`LICENSE-APACHE`, `LICENSE-MIT` upstream). Release 0.1.2 is the pinned
+  installer this repo calls; nothing of it is vendored here.
+- The headless-memory findings in stage 1 are **Christopher Owen
+  (christopherowen)**, X article 2026-11-16, quoted with attribution in
+  `docs/MEMORY-RECLAIM.md`.
+
+Anything this repo installs, it credits in the same place it documents it.
+
