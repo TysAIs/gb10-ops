@@ -2,6 +2,8 @@
 # Self-test for deploy/carveout-gate.sh. Builds fixture snapshots and
 # asserts the verdict of each. Needs no GB10 and no privilege: every case
 # is a directory of files that stands in for a node's read-only state.
+# The lender case also binds a throwaway unix socket under such a directory
+# and runs gather() against it, so python3 (stdlib only) is required.
 #
 #   bash tests/carveout-gate-selftest.sh
 #
@@ -101,19 +103,48 @@ out=$(bash "$GATE" --from "$WORK/other-lender" 2>&1)
 case "$out" in *"/run/dispram/dispram.sock"*) echo "ok   other-lender-named" ;;
                *) echo "FAIL other-lender-named: the blocked line does not name the socket"; fails=$((fails+1)) ;; esac
 
-# The other-lender constant must stay the path dispramd really binds
+# The other-lender constant must BE the path dispramd really binds
 # (kindling-spark-os dispramd.py, gr8 knobs/system.yaml, talos-dgx-kernel
 # dispramd.c). A wrong constant makes this gate report 0 lenders on a node
 # that is already lending, which is the one thing it exists to catch.
+# Equality, not containment: '/run/dispram/dispram.sock.old' contains the
+# right path and would pass a substring test while watching a socket no
+# lender binds.
+lender_expected="/run/dispram/dispram.sock"
 lender_const=$(sed -n 's/^OTHER_LENDERS="\(.*\)"$/\1/p' "$GATE")
-case "$lender_const" in
-    *"/run/dispram/dispram.sock"*) echo "ok   lender-constant" ;;
-    *) echo "FAIL lender-constant: OTHER_LENDERS is '$lender_const'"; fails=$((fails+1)) ;;
-esac
-case "$lender_const" in
-    *"/run/dispram/ctrl.sock"*|*"/run/kindling/dispram.sock"*)
-        echo "FAIL lender-constant: watches a socket no lender binds ($lender_const)"; fails=$((fails+1)) ;;
-esac
+if [ "$lender_const" = "$lender_expected" ]; then
+    echo "ok   lender-constant"
+else
+    echo "FAIL lender-constant: OTHER_LENDERS is '$lender_const', wanted '$lender_expected'"
+    fails=$((fails+1))
+fi
+
+# Behavioural: every case above hands --from a fabricated snapshot, so the
+# code that probes OTHER_LENDERS has never run — the constant was only ever
+# compared as a string. Bind a socket where dispramd binds it, stage it under
+# GATE_ROOT, and make gather() itself report it. This is the only case that
+# goes red for a wrong constant without reading the constant: a mutation to
+# '/run/dispram/dispram.sock.old' probes a path nobody bound and records no
+# lender, so the gate would call a lending node clean.
+lender_gather() {
+    local fake="$WORK/fake-node" sock snap got rc
+    sock="$fake$lender_expected"
+    snap="$WORK/gathered"
+    mkdir -p "${sock%/*}" || { echo "FAIL lender-gather: cannot stage $fake"; fails=$((fails+1)); return; }
+    if ! python3 -c 'import socket,sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$sock" 2>"$WORK/bind.err"; then
+        echo "FAIL lender-gather: cannot bind $sock: $(cat "$WORK/bind.err")"; fails=$((fails+1)); return
+    fi
+    GATE_ROOT="$fake" bash "$GATE" --snapshot "$snap" >/dev/null 2>&1; rc=$?
+    got=""
+    [ -f "$snap/snapshot/other_lenders" ] && got=$(tr -d '\r' < "$snap/snapshot/other_lenders")
+    if [ "$rc" -eq 0 ] && [ "$got" = "$lender_expected" ]; then
+        echo "ok   lender-gather"
+    else
+        echo "FAIL lender-gather: snapshot/other_lenders is '${got:-<absent>}' (--snapshot exit $rc), wanted '$lender_expected'"
+        fails=$((fails+1))
+    fi
+}
+lender_gather
 
 fixture "$WORK/not-gb10" gpu="NVIDIA H100 80GB HBM3"
 check not-gb10 1 "no GB10"

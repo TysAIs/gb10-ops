@@ -82,22 +82,28 @@ fi
 # something the gate reads; nothing on the node is touched.
 gather() {
     local out=$1
+    # GATE_ROOT (tests only) stages a fake node tree: every node path read
+    # below resolves under it, so the selftest can bind a socket at the
+    # path dispramd binds and prove gather() finds it itself. Unset, this
+    # is the real root. Commands with no file form (uname, systemctl,
+    # nvidia-smi, getconf) always run locally.
+    local r="${GATE_ROOT:-}"
     mkdir -p "$out"/proc/driver/nvidia "$out"/proc/sys/vm \
              "$out"/sys/module/nvidia_drm/parameters "$out"/etc/modprobe.d "$out"/snapshot 2>/dev/null
 
     uname -r > "$out/snapshot/uname_r" 2>/dev/null
     uname -m > "$out/snapshot/machine_arch" 2>/dev/null
     getconf PAGESIZE > "$out/snapshot/pagesize" 2>/dev/null
-    cp /proc/driver/nvidia/version "$out/proc/driver/nvidia/version" 2>/dev/null
-    cp /proc/sys/vm/watermark_boost_factor "$out/proc/sys/vm/watermark_boost_factor" 2>/dev/null
-    cp /proc/sys/vm/min_free_kbytes "$out/proc/sys/vm/min_free_kbytes" 2>/dev/null
-    cp /proc/buddyinfo "$out/proc/buddyinfo" 2>/dev/null
-    cp /proc/cmdline "$out/proc/cmdline" 2>/dev/null
-    grep -E '^(MemTotal|MemAvailable)' /proc/meminfo > "$out/proc/meminfo" 2>/dev/null
-    { cat /sys/module/nvidia_drm/parameters/modeset 2>/dev/null \
-      || sudo -n cat /sys/module/nvidia_drm/parameters/modeset 2>/dev/null; } \
+    cp "$r/proc/driver/nvidia/version" "$out/proc/driver/nvidia/version" 2>/dev/null
+    cp "$r/proc/sys/vm/watermark_boost_factor" "$out/proc/sys/vm/watermark_boost_factor" 2>/dev/null
+    cp "$r/proc/sys/vm/min_free_kbytes" "$out/proc/sys/vm/min_free_kbytes" 2>/dev/null
+    cp "$r/proc/buddyinfo" "$out/proc/buddyinfo" 2>/dev/null
+    cp "$r/proc/cmdline" "$out/proc/cmdline" 2>/dev/null
+    grep -E '^(MemTotal|MemAvailable)' "$r/proc/meminfo" > "$out/proc/meminfo" 2>/dev/null
+    { cat "$r/sys/module/nvidia_drm/parameters/modeset" 2>/dev/null \
+      || sudo -n cat "$r/sys/module/nvidia_drm/parameters/modeset" 2>/dev/null; } \
         > "$out/sys/module/nvidia_drm/parameters/modeset" 2>/dev/null
-    cp /etc/modprobe.d/zz-nvidia-drm-override.conf "$out/etc/modprobe.d/" 2>/dev/null
+    cp "$r/etc/modprobe.d/zz-nvidia-drm-override.conf" "$out/etc/modprobe.d/" 2>/dev/null
 
     nvidia-smi --query-gpu=name --format=csv,noheader > "$out/snapshot/nvidia_smi_gpu" 2>/dev/null
     systemctl get-default > "$out/snapshot/get_default" 2>/dev/null
@@ -107,7 +113,7 @@ gather() {
     done
     # Anything but nvidia-persistenced holding the modeset device means a
     # display stack is up: spark-attic's first display signal.
-    for p in /proc/[0-9]*/fd/*; do
+    for p in "$r"/proc/[0-9]*/fd/*; do
         t=$(readlink "$p" 2>/dev/null) || continue
         case "$t" in
             */nvidia-modeset)
@@ -116,8 +122,10 @@ gather() {
                 echo "$pid $comm" >> "$out/snapshot/modeset_holders" ;;
         esac
     done 2>/dev/null
+    # Record the node path, never the staged one: the gate reports what a
+    # human would look for on the node.
     for s in $OTHER_LENDERS; do
-        [ -S "$s" ] && echo "$s" >> "$out/snapshot/other_lenders"
+        [ -S "$r$s" ] && echo "$s" >> "$out/snapshot/other_lenders"
     done
     return 0
 }
