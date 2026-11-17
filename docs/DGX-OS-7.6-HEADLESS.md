@@ -31,6 +31,25 @@ Console/UEFI setup only (Esc/Del at boot), not an SSH command:
   roughly **1.5 GB back** per headless node.
 - Verify by comparing available system memory before/after on that
   node; don't claim a fixed number for a node you haven't measured.
+- **This and carveout lending are mutually exclusive.** Auto hands
+  ~1.5 GB back to System RAM; the optional `atticd` lends the reserved
+  region to CUDA instead and needs it left at 2 GB. Pick one per site
+  and keep it uniform across a cluster (`docs/DISPLAY-CARVEOUT.md`).
+
+## Memory hygiene that belongs with headless
+
+Two settings this standard now requires, and one check:
+
+- `vm.watermark_boost_factor=0` — at the default the kernel can hide up
+  to ~0.87 GB of available memory from `MemAvailable` (measured
+  upstream 2026-11-16).
+- No `splash`/plymouth on the kernel command line — a framebuffer for a
+  monitor nobody plugs in.
+- Report the largest free block from `/proc/buddyinfo`, not just
+  `MemAvailable`: on unified memory a model needs contiguous blocks, and
+  a node with plenty free can still have nothing above 256 MiB.
+
+Details, measurements and the not-adopted items: `docs/MEMORY-RECLAIM.md`.
 
 ## Kernel on 7.6: the -64k qualified baseline
 
