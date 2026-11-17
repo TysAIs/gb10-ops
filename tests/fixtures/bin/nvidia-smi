@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# TEST DOUBLE for nvidia-smi, used only by tests/apply-selftest.sh.
+set -u
+R="${NODE_ROOT:-}"
+case "$*" in
+    *--query-gpu=name*)
+        cat "$R/snapshot/nvidia_smi_gpu" 2>/dev/null || echo "NVIDIA GB10" ;;
+    *) : ;;
+esac
+exit 0

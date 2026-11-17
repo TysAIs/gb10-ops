@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# TEST DOUBLE for getconf, used only by tests/apply-selftest.sh.
+set -u
+R="${NODE_ROOT:-}"
+case "${1:-}" in
+    PAGESIZE|PAGE_SIZE) cat "$R/snapshot/pagesize" 2>/dev/null || echo 4096 ;;
+    *) echo 4096 ;;
+esac

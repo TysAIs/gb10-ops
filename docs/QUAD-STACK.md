@@ -4,6 +4,10 @@ How to cable, address, and verify a GB10 cluster fabric: 2 nodes, 4
 nodes, or more, on any 200G switch. (File name kept from the original
 4-node build; nothing here is 4-node-specific.)
 
+Fabric addressing is site data: the addresses below are documentation-range
+examples. What is applied and verified on the reference fleet today is the
+status table in `README.md`.
+
 Each GB10 node's ConnectX-7 port exposes **two PCIe functions** for one
 cabled port. The two ~100G halves the host sees (`rocep1s0f1` +
 `roceP2p1s0f1`, netdevs `enp1s0f1np1` + `enP2p1s0f1np1`) are twins of the

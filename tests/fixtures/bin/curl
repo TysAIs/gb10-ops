@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# TEST DOUBLE for curl, used only by tests/apply-selftest.sh.
+# deploy/apply.sh calls curl twice: to fetch the installer (the self-test uses
+# a local path instead) and to read a serving health endpoint. This double
+# never touches the network: it answers with $FAKE_SERVING_CODE (default 200)
+# when asked for %{http_code}, and refuses anything else, so a test can never
+# silently depend on a real download.
+set -u
+want_code=0
+for a in "$@"; do
+    case "$a" in
+        *'%{http_code}'*) want_code=1 ;;
+        -o|--output) : ;;
+    esac
+done
+if [ "$want_code" -eq 1 ]; then
+    printf '%s' "${FAKE_SERVING_CODE:-200}"
+    exit 0
+fi
+echo "curl double: no network in the self-test (asked to fetch ${*: -1})" >&2
+exit 6

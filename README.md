@@ -6,6 +6,10 @@
 > Measured on real hardware; written so a human, or an AI agent,
 > can apply and verify it.
 
+> **Applying it? Start at [AGENT-APPLY.md](AGENT-APPLY.md).** That is the
+> mechanical runbook for any node count from 1 to 8: one command per step,
+> the output that means it worked, and the condition that means stop.
+
 ## The standard
 
 | Area | Standard | Where |
@@ -22,11 +26,17 @@
 
 **Optional, gated component (not the standard):** the GB10 display
 carveout can be lent to CUDA as ~2 GiB more KV cache or weights
-(`bertholomus/spark-attic`). It is a per-node, driver-gated daemon that
-this repo gates but never installs. Read `docs/DISPLAY-CARVEOUT.md` for
-the measured numbers, the conflict with the UEFI reclaim step below, and
-the engine matrix; run `deploy/carveout-gate.sh <node>` before anything
-else. A node that never enables it follows the standard exactly.
+(`bertholomus/spark-attic`, Apache-2.0 OR MIT — credits in
+`docs/DISPLAY-CARVEOUT.md`). It is a per-node, driver-gated daemon;
+`deploy/carveout-gate.sh <node>` decides whether a node may lend, and
+`deploy/apply.sh` installs it as stage 2 on a node the gate calls
+ELIGIBLE. **Installed and running on the four reference nodes since
+2026-11-16** (state `ready`, `validated true`, `lent_mib 0`, unit
+enabled+active), and nothing consumes the carveout yet: consumption is
+stage 3 in `docs/APPLY-PLAN-2026-11.md`, gated on serving-recipe work.
+Read `docs/DISPLAY-CARVEOUT.md` for the measured numbers and the conflict
+with the UEFI reclaim step below. A node that never installs it follows
+the standard exactly.
 
 **Kernel baseline (updated Nov 2026):** the standard kernel is
 `7.0.0-1019-nvidia-64k` on DGX OS 7.6, the qualified baseline for the
@@ -39,6 +49,31 @@ the qualified path is the -64k variant, deployed and verified as a
 uniform set; never mix kernels across a cluster. Also never install
 `doca-ofed` or the dkms MFT package (breaks the ConnectX-7). Details
 in `docs/HARDENING.md`.
+
+## Status of every item in this standard (2026-11-16)
+
+A standard is a claim about machines, so every row names what was read
+back, not what was intended. "Reference fleet" is the maintainer's four
+GB10 nodes (mixed models, one kernel); the readbacks are the 2026-11-16
+captures kept with that fleet work. Nothing here assumes a node count:
+your fleet may be one node or eight.
+
+| Item | State | Verification, and its limit |
+|---|---|---|
+| GPU cap 2200 MHz | applied, all four | `gb10-clock-cap.service` enabled+active; `nvidia-smi --query-gpu=clocks.sm,clocks.max.sm` reads 2184–2190 MHz against a 3003 MHz max. The lock is not readable without root and no load test was run, so this is consistent-with, not proof-of |
+| CPU cap 2808 MHz | applied, all four | `gb10-cpu-cap.service` enabled+active; `scaling_max_freq` = `cpuinfo_max_freq` = 2808000, governor `performance`, every policy |
+| Kernel `7.0.0-1019-nvidia-64k` | applied, uniform | `uname -r` reads the qualified kernel; `getconf PAGESIZE` = 65536 on all four |
+| Explicit boot default | applied | the unconditional default in the generated `grub.cfg` is the explicit 64k-kernel entry (read 2026-11-16); `deploy/apply-grub-default.sh --check` reports drift per node |
+| Headless | applied | `systemctl get-default` = `multi-user.target`; display managers inactive; `modeset` = N |
+| `vm.watermark_boost_factor=0` | applied, all four | drop-in `/etc/sysctl.d/90-watermark-boost.conf` present, `sysctl --system` rc=0, live value reads back 0. **Its benefit is unmeasured**: `MemAvailable` moved −96/+104/−11/+78 MiB across the four, i.e. noise. What the knob removes is high-order reclaim slack, which nobody has measured on these nodes |
+| `splash` off the command line | staged, not live | removed from the vendor grub drop-in and the regenerated `grub.cfg` on all four (`splash` occurrences: 0); the live `/proc/cmdline` still carries it until the next planned reboot, because this standard does not reboot nodes |
+| Hardening (CVE sysctls, nftables) | procedure, not re-verified 2026-11-16 | commands and expected output are in `docs/HARDENING.md`; the 2026-11-16 captures did not re-read them, so this row is a procedure to run, not a verified state |
+| Fabric (2+ nodes) | procedure, per site | `docs/QUAD-STACK.md`; addresses are site data, shown only as documentation-range examples |
+| Carveout daemon (stage 2) | applied, all four | `attic.service` enabled+active, NRestarts=0; `state ready`, `validated true`, `size_mib 2044`, `lent_mib 0`, 2816 KB RSS, 0.1–0.3 % CPU; the serving container was not restarted |
+| Engine consumption (stage 3) | **not applied, gated** | zero tokens of the planned capacity are in use. It needs recipe work, a scratch engine and a comparison run: `docs/APPLY-PLAN-2026-11.md` §4 |
+
+Fan control is not a row because there is no fan step: no fan tool is
+installed, documented or required by this standard (see Thermals).
 
 ### Why 2200 MHz GPU?
 
@@ -95,6 +130,12 @@ bash deploy/apply-grub-default.sh --check node1 node2   # boot-default drift rep
 bash deploy/apply-grub-default.sh node1 node2           # explicit 7.0.0-1019-nvidia-64k GRUB default; no reboot
 bash deploy/apply-2200.sh --uninstall gb10@node1  # remove GPU cap
 bash deploy/carveout-gate.sh node1 node2         # read-only: may this node lend its display carveout?
+# carveout stages, idempotent, 1 to 8 nodes; see AGENT-APPLY.md
+bash deploy/apply.sh --inventory inventory.txt --check-inventory   # validate the node list
+bash deploy/apply.sh --inventory inventory.txt --dry-run           # read-only plan
+bash deploy/apply.sh --inventory inventory.txt --apply             # stage 1, then stage 2
+bash deploy/apply.sh --inventory inventory.txt --verify            # re-read every check
+bash deploy/apply.sh --inventory inventory.txt --rollback          # reverse stage 2, then stage 1
 ```
 
 Example hostnames/IPs are examples. Substitute your own. The scripts
@@ -182,6 +223,7 @@ warning-level deviation is a documented site choice.
 ```
 gb10-ops/
 ├── README.md                  # This file: the standard
+├── AGENT-APPLY.md             # The runbook: apply it, 1 to 8 nodes, step by step
 ├── LICENSE                    # MIT
 ├── DESCRIPTION-CHANGE.md      # GitHub repo description (final text)
 ├── assets/
@@ -190,30 +232,48 @@ gb10-ops/
 │   ├── apply-2200.sh          # GPU cap → gb10-clock-cap.service
 │   ├── apply-2808.sh          # CPU cap → gb10-cpu-cap.service
 │   ├── apply-grub-default.sh  # explicit GRUB boot default, never "saved"
-│   └── carveout-gate.sh       # read-only: may this node lend its display carveout?
+│   ├── carveout-gate.sh       # read-only: may this node lend its display carveout?
+│   └── apply.sh               # gate → stage 1 → stage 2, idempotent, with rollback
 ├── docs/
 │   ├── CPU-TUNING.md          # CPU cap evidence (A/B v2 + burn test)
 │   ├── POWER-DELIVERY.md      # Defect research and methodology
 │   ├── HARDENING.md           # Kernel baseline + CVE mitigations
 │   ├── DGX-OS-7.6-HEADLESS.md # Headless standard + DGX OS 7.6 kernel baseline
 │   ├── MEMORY-RECLAIM.md      # Headless memory + fragmentation checks (Nov 2026)
-│   ├── DISPLAY-CARVEOUT.md    # Optional carveout lending: analysis, gates, verdict
-│   ├── APPLY-PLAN-2026-11.md  # Staged, unapplied plan for a 4-node fleet
+│   ├── DISPLAY-CARVEOUT.md    # Optional carveout lending: analysis, gates, status, credits
+│   ├── APPLY-PLAN-2026-11.md  # Staged plan + what is applied today, stage by stage
+│   ├── ENGINE-CONSUMPTION-DESIGN.md  # Stage 3 feasibility, protocol, go/no-go
 │   ├── QUAD-STACK.md          # N-node 200G fabric (any node count)
 │   └── DEEPSEEK-PLANNING.md   # Serving-recipe notes (not the standard)
 └── tests/
     ├── proper-sweep.sh        # llama-benchy clock-cap sweep
-    └── carveout-gate-selftest.sh  # fixture tests for deploy/carveout-gate.sh
+    ├── carveout-gate-selftest.sh  # fixture tests for deploy/carveout-gate.sh
+    ├── apply-selftest.sh      # dry-run/idempotency/rollback tests for deploy/apply.sh
+    ├── purity-scan.sh         # no site data, no personal data: tree scan
+    └── fixtures/              # fake node roots + command doubles for the self-tests
 ```
 
 ## Attribution
 
-- **agjs/gb10-clock-cap**: Benchmark rigor, soak testing methodology
-- **hoesing/spark-gpu-throttle-check**: Power-delivery diagnostic
-- **miaai-lab/sparkLimiter**: Deployment pattern
-- **eugr/llama-benchy**: Benchmarking tool
-- **bertholomus/spark-attic**: Carveout lending (analyzed, gated, not installed here)
-- **Christopher Owen (christopherowen)**: Headless memory findings, 2026-11-16
+Every upstream this repository borrows from, with its source and license:
+
+- **agjs/gb10-clock-cap** — https://github.com/agjs/gb10-clock-cap — MIT.
+  Benchmark rigor, soak testing methodology, the systemd cap unit.
+- **MiaAI-Lab/sparkLimiter** — https://github.com/MiaAI-Lab/sparkLimiter —
+  MIT. Multi-host deployment pattern for the clock cap.
+- **hoesing/spark-gpu-throttle-check** —
+  https://github.com/hoesing/spark-gpu-throttle-check — MIT.
+  Power-delivery diagnostic.
+- **eugr/llama-benchy** — https://github.com/eugr/llama-benchy — MIT.
+  The benchmarking tool this repo's sweeps call.
+- **bertholomus/spark-attic** — https://github.com/bertholomus/spark-attic —
+  Apache-2.0 OR MIT (`LICENSE-APACHE`, `LICENSE-MIT`). The optional carveout
+  lending daemon; gated by this repo, installed only as stage 2 on an
+  ELIGIBLE node.
+- **Christopher Owen (christopherowen)** — X article, "If you're running
+  headless anyway, recover the memory and reduce the memory fragmentation",
+  2026-11-16. Source of the headless-memory findings in
+  `docs/MEMORY-RECLAIM.md`; quoted with attribution, no code taken.
 
 ## License
 
