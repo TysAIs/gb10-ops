@@ -1,5 +1,8 @@
 # Headless GB10 on DGX OS 7.6
 
+What is applied and verified on the reference fleet today, with the readback
+for each item, is the status table in `README.md`.
+
 ## The headless standard
 
 ```bash

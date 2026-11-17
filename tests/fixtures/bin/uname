@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# TEST DOUBLE for uname, used only by tests/apply-selftest.sh.
+# Answers from the fake node root so a gate run over the fake ssh transport
+# sees the fixture's kernel and architecture instead of this machine's.
+set -u
+R="${NODE_ROOT:-}"
+case "${1:-}" in
+    -r) cat "$R/snapshot/uname_r" 2>/dev/null || echo unknown ;;
+    -m) cat "$R/snapshot/machine_arch" 2>/dev/null || echo unknown ;;
+    *)  echo Linux ;;
+esac

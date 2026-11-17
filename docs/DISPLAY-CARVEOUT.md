@@ -1,8 +1,22 @@
 # The display carveout as extra CUDA memory (spark-attic), analysed 2026-11-16
 
-An optional, gated component. It is **not** part of the setup standard:
-nothing in this repo installs it, and a node that never uses it is a node
-that follows the standard exactly.
+An optional, gated component. It is **not** part of the setup standard: a
+node that never installs it is a node that follows the standard exactly.
+This repository gates it (`deploy/carveout-gate.sh`, read-only) and
+installs it only as stage 2 (`deploy/apply.sh`) on a node the gate calls
+ELIGIBLE.
+
+**Status, 2026-11-16: installed and running on all four reference nodes**
+(spark-attic 0.1.2, heap mode): `state: ready`, `validated: true`,
+`size_mib: 2044`, `lent_mib: 0`, unit enabled+active with zero restarts,
+2816 KB RSS, 0.1–0.3 % CPU, serving container not restarted. Nothing
+consumes the carveout — engine consumption is stage 3 in
+`docs/APPLY-PLAN-2026-11.md` and is **not applied**.
+
+**Credits.** spark-attic is upstream work: author **bertholomus**, source
+https://github.com/bertholomus/spark-attic, license **Apache-2.0 OR MIT**
+(`LICENSE-APACHE` and `LICENSE-MIT` in that repository). Nothing of it is
+vendored here: the installer is fetched from the pinned release.
 
 Source: `bertholomus/spark-attic`, release 0.1.2, read 2026-11-16. All
 figures in "Measured upstream" are theirs. The TensorFold and vLLM rows
@@ -149,6 +163,17 @@ until it is started with `SPARK_ATTIC_PLACE=off`.**
 The mitigation is upstream's own: run `attic-preflight.py` in the engine
 image first, which exercises the same write the hooks do, so that a shape
 mismatch is caught before a server start is spent on it.
+
+One operational false alarm, observed on the reference fleet while
+installing 0.1.2: `spark-attic doctor` occasionally reports
+`libcuda.so.1 is missing` on a node where the library resolves and
+dlopens correctly. The cause is upstream's `install.sh` running under
+`set -o pipefail`, where `ldconfig -p | grep -q` makes grep exit early on
+the first match and turns the SIGPIPE into a pipeline failure. It is a
+cosmetic CLI false negative; `/run/spark-attic/status.json` is the
+daemon's own state and is authoritative. `deploy/apply.sh` therefore
+verifies against `status.json` and reports a doctor failure as a warning
+rather than failing a healthy node.
 
 ## Verdict for our fleet (2026-11-16)
 

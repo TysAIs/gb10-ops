@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# TEST DOUBLE for sysctl, used only by tests/apply-selftest.sh.
+# Reads and writes a fake node's /proc/sys tree under $NODE_ROOT, so a
+# readback after `--system` is a real readback of a real file.
+set -u
+R="${NODE_ROOT:?fake sysctl needs NODE_ROOT}"
+setkey() { # key=value
+    local kv=$1 k v f
+    k=${kv%%=*}; v=${kv#*=}
+    k=$(printf '%s' "$k" | tr -d ' ')
+    v=$(printf '%s' "$v" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    f="$R/proc/sys/$(printf '%s' "$k" | tr '.' '/')"
+    mkdir -p "$(dirname "$f")" || return 1
+    printf '%s\n' "$v" > "$f"
+}
+apply_file() {
+    local c line k
+    for c in "$R"/etc/sysctl.d/*.conf; do
+        [ -f "$c" ] || continue
+        while IFS= read -r line || [ -n "$line" ]; do
+            case "$line" in ''|'#'*) continue ;; esac
+            setkey "$line"
+        done < "$c"
+    done
+}
+case "${1:-}" in
+    -n) f="$R/proc/sys/$(printf '%s' "${2:-}" | tr '.' '/')"
+        cat "$f" 2>/dev/null || exit 255 ;;
+    -w) setkey "${2:-}" ;;
+    --system|-p|"") apply_file ;;
+    *) : ;;
+esac
+exit 0

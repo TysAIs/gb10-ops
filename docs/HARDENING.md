@@ -2,6 +2,10 @@
 
 Apply identically on every GB10 node. Verify after each step.
 
+What is applied and verified on the reference fleet today, with the readback
+for each item, is the status table in `README.md` ("Status of every item in
+this standard").
+
 ## Kernel: the 7.0.0-1019-nvidia-64k qualified baseline (Nov 2026)
 
 The standard kernel is `7.0.0-1019-nvidia-64k` on DGX OS 7.6, on ALL

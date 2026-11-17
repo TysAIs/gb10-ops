@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# TEST DOUBLE for systemctl, used only by tests/apply-selftest.sh.
+# Unit state lives in $NODE_ROOT/var/lib/fake-units/<unit>/{active,enabled}.
+# Semantics that matter to deploy/apply.sh are copied from systemctl:
+# is-active exits 3 and prints "inactive"; is-enabled exits 1 and prints
+# "disabled"; an unknown unit prints "not-found" and exits 1.
+set -u
+R="${NODE_ROOT:?fake systemctl needs NODE_ROOT}"
+D="$R/var/lib/fake-units"
+cmd="${1:-}"; shift || true
+units=()
+for a in "$@"; do
+    case "$a" in --*|-*) : ;; *) units+=("$a") ;; esac
+done
+
+case "$cmd" in
+    is-active)
+        s=$(cat "$D/${units[0]:-x}/active" 2>/dev/null)
+        [ "$s" = active ] && { echo active; exit 0; }
+        echo "${s:-inactive}"; exit 3 ;;
+    is-enabled)
+        s=$(cat "$D/${units[0]:-x}/enabled" 2>/dev/null)
+        [ "$s" = enabled ] && { echo enabled; exit 0; }
+        echo "${s:-not-found}"; exit 1 ;;
+    get-default) echo multi-user.target; exit 0 ;;
+    daemon-reload) exit 0 ;;
+    stop|start|restart|disable|enable|disable-now)
+        rc=0
+        for u in "${units[@]}"; do
+            if [ ! -d "$D/$u" ]; then
+                echo "Failed to $cmd $u: Unit $u not found." >&2
+                rc=5; continue
+            fi
+            case "$cmd" in
+                stop|restart) echo inactive > "$D/$u/active" ;;
+                start|restart) echo active > "$D/$u/active" ;;
+            esac
+            case "$cmd" in
+                enable)  echo enabled  > "$D/$u/enabled" ;;
+                disable) echo disabled > "$D/$u/enabled" ;;
+            esac
+            echo "$cmd $u" >> "$D/journal"
+        done
+        exit $rc ;;
+    *) exit 0 ;;
+esac

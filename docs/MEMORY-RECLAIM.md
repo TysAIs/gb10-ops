@@ -21,7 +21,7 @@ and plain reads; no changes made).
 |---|---|
 | Boot to `multi-user.target`, no display manager | `systemctl get-default` = `multi-user.target`; `gdm` inactive on all four |
 | Disable `dgx-dashboard`, `dgx-dashboard-admin` | disabled/inactive on all four |
-| Disable `snapd` (and socket/seeded/repair timer) | disabled; inactive on three, **active on one** (disabled but running: it survives until the next stop/reboot) |
+| Disable `snapd` (and socket/seeded/repair timer) | disabled; inactive on all four since 2026-11-16 (one node was disabled-but-running until both units were stopped) |
 | Disable `cups`, `cups-browsed` | masked on all four |
 | Disable `bluetooth` | disabled or masked on all four |
 | Disable `fwupd-refresh.timer` | disabled/inactive on all four |
@@ -60,23 +60,41 @@ sysctl vm.watermark_boost_factor      # expect 0
 
 Cost: the boost exists so that a burst of high-order allocations has
 slack. Upstream buys that slack back with a pre-launch defrag in its
-engine recipe, but that defrag is §3 work we do not ship today, so on our
-nodes the slack is simply gone until someone measures what it was worth.
-Reversible with no reboot. **Status: standard step, cited to the
-2026-11-16 article; not measured on our nodes.** Measure it on one node
-before rolling it across a fleet, and keep it uniform — a mixed value is a
-cross-node difference in reported available memory, which is exactly what
-makes capacity conversations go wrong.
+engine recipe, but that defrag is §3 work we do not ship today, so the
+slack is simply gone until someone measures what it was worth.
+Reversible, and the revert is not "delete the file": no stock file sets
+this key, so removing the drop-in leaves the live value where it was —
+`deploy/apply.sh --rollback` restores the value it recorded before
+applying.
+
+**Status: applied on the reference fleet 2026-11-16.** The drop-in is
+present on all four nodes, `sysctl --system` exited 0, and the live value
+reads back `0` everywhere. The article's motivation was that the boost
+hides memory; what the four nodes actually showed is that
+`MemAvailable` did not move beyond noise (−96/+104/−11/+78 MiB), because
+the knob governs reclaim slack for high-order bursts rather than the
+available-memory estimate. The benefit remains **unmeasured**, and the
+cost is unmeasured too. Verify with
+`sysctl -n vm.watermark_boost_factor` (expect `0`); keep it uniform,
+because a mixed value is a cross-node difference in reported available
+memory, which is exactly what makes capacity conversations go wrong.
 
 ### Drop `splash` from the kernel command line (adopt as cleanup)
 
-Every one of our nodes still carries `quiet splash
+Every one of the reference nodes carried `quiet splash
 plymouth.ignore-serial-consoles plymouth.use-simpledrm` in
 `/proc/cmdline`. On a node nobody plugs a monitor into, that is a
 framebuffer setup for an audience of nobody, and it hides boot text from
-the one console that matters (`ttyS0`). Remove `splash` and the plymouth
-arguments at the next planned boot; it is a GRUB edit, not a live change.
-This is cosmetic hygiene, not a memory claim.
+the one console that matters (`ttyS0`).
+
+**Status: staged 2026-11-16, not yet in effect.** On DGX OS the
+authoritative file is the vendor drop-in `/etc/default/grub.d/menu.cfg`,
+not `/etc/default/grub`; `splash` was removed there and `update-grub`
+regenerated the menu on all four nodes, whose generated `grub.cfg` now has
+zero `splash` occurrences. The live `/proc/cmdline` still carries it until
+the next planned boot, because this standard does not reboot nodes. Verify
+after that boot with `grep -c splash /proc/cmdline` (expect `0`). Cosmetic
+hygiene, not a memory claim.
 
 ### `buddyinfo` as a first-class check (adopt into verification)
 

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# TEST DOUBLE for ssh, used only by tests/apply-selftest.sh.
+#
+# deploy/apply.sh and deploy/carveout-gate.sh reach nodes over ssh. The
+# self-test has no second machine, so this double runs the remote command
+# locally against a fake node root: it accepts the same argument shape as
+# ssh (-o key=value ... host command), refuses to invent a network, and
+# exports NODE_ROOT/GATE_ROOT so every remote-side read and write lands in
+# the fixture tree.
+#
+# FAKE_SSH_FAIL_HOST=<host> makes that host unreachable, which is how the
+# self-test proves the SKIP path.
+set -u
+[ -n "${FAKE_SSH_ROOT:-}" ] || { echo "fake ssh: FAKE_SSH_ROOT is unset" >&2; exit 255; }
+host=""; cmd=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -o|-p|-l|-i|-F|-E) [ $# -ge 2 ] || exit 255; shift 2 ;;
+        -*) shift ;;
+        *) if [ -z "$host" ]; then host=$1; shift; cmd=${1:-}; shift || true
+           else shift; fi ;;
+    esac
+done
+[ -n "$host" ] || { echo "fake ssh: no host argument" >&2; exit 255; }
+if [ -n "${FAKE_SSH_FAIL_HOST:-}" ] && [ "$host" = "$FAKE_SSH_FAIL_HOST" ]; then
+    echo "ssh: connect to host $host port 22: Connection refused" >&2
+    exit 255
+fi
+export NODE_ROOT="$FAKE_SSH_ROOT"
+export GATE_ROOT="$FAKE_SSH_ROOT"
+exec bash -c "$cmd"
